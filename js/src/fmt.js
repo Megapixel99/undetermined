@@ -37,10 +37,20 @@
  */
 
 export const SIG_DIGITS = 6;
+export const ALL_DIGITS = 17;              // a double's shortest decimal never needs more
 export const EXACT_INT = 9007199254740991; // 2**53 - 1, the last integer a double holds
+
+// Below one significant digit there is nothing left to be significant: `round` hands back
+// an empty digit string and every branch under it would punctuate the empty string into
+// something that is not a number -- `undefinede+00` here, `0.` in the other half. A
+// refusal rather than either, and the same refusal in both halves.
+const NO_DIGITS =
+  "digits must be at least 1: a number rendered to fewer significant digits " +
+  "than one is not a rendering of that number";
 
 /** `x` to `digits` significant digits. Exact integers are written out in full. */
 export function sig(x, digits = SIG_DIGITS) {
+  if (digits < 1) throw new Error(NO_DIGITS);
   x = Number(x);
   const special = isSpecial(x);
   if (special !== null) return special;

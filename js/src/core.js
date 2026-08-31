@@ -108,20 +108,26 @@ export function ladderFor(sample, truths, trials, seed0 = 0) {
  *
  * A throw, not an `undetermined`. The other refusals here describe what the program
  * would not reveal; this one says the instrument was wired up wrong.
+ *
+ * Its numbers go through `fmt` like every other number this package prints, at ALL_DIGITS
+ * rather than six: the message exists to say that two values differed, and six
+ * significant digits would render a pair that differs in the tenth as one string twice.
  */
 export function reproducible(obs, truths, seed0 = 17) {
   const names = Object.keys(obs).sort();
   const rungs = truths.length ? [...new Set([truths[0], truths[truths.length - 1]])] : [];
+  const whole = fmt.ALL_DIGITS;
   for (const name of names) {
     for (const truth of rungs) {
       const first = obs[name](truth, seed0);
       const second = obs[name](truth, seed0);
       if (!Object.is(first, second)) {
         throw new Error(
-          `observable ${JSON.stringify(name)} is not reproducible: at truth=${truth} and ` +
-          `seed=${seed0} it returned ${first} and then ${second}. Every constant below is ` +
-          `fitted from a mean over seeds, so an observable that ignores its seed yields a ` +
-          `mean over noise — which still plateaus, and would be reported as an answer.`
+          `observable \`${name}\` is not reproducible: at truth=${fmt.sig(truth, whole)} ` +
+          `and seed=${fmt.sig(seed0, whole)} it returned ${fmt.sig(first, whole)} and ` +
+          `then ${fmt.sig(second, whole)}. Every constant below is fitted from a mean ` +
+          `over seeds, so an observable that ignores its seed yields a mean over noise ` +
+          `-- which still plateaus, and would be reported as an answer.`
         );
       }
     }

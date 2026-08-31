@@ -99,7 +99,11 @@ export function toTolerance(adapter, tolerance, {
         all_supported: unsupported.length === 0,
         unsupported, worst_mde: worst, history,
         would_need: want === null ? null : Math.min(want, 1e12),
-        shortfall: want === null ? null : Math.round((want / cap) * 100) / 100,
+        // Through `fmt` and back, and not through `Math.round`: `Math.round` rounds halves
+        // up and Python's `round` rounds them to even, so `want / cap` of exactly 1.125 is
+        // 1.13 in one half and 1.12 in the other. The formatter is the rule both halves
+        // already share, and a decimal string parses to the same double on both sides.
+        shortfall: want === null ? null : Number(fmt.fixed(want / cap, 2)),
       };
       return report;
     }

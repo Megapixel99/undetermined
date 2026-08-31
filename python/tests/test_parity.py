@@ -218,6 +218,19 @@ class TheRENDEREDReportAgrees(unittest.TestCase):
                          js["per_observable"]["a"]["plateau"]["why"])
         self.assertEqual(mine["notes"], js["notes"])
 
+    def test_the_whole_budget_block_agrees_including_a_shortfall_on_a_tie(self):
+        # `shortfall` is a NUMBER and so escaped the `why` comparisons above, but it was
+        # rounded by each language's own primitive: `round` rounds halves to even and
+        # `Math.round` rounds them up. This tolerance is chosen so `would_need` lands on
+        # 72 and the shortfall is exactly 72/64 == 1.125 -- the tie, where the two used to
+        # report 1.12 and 1.13.
+        mine = U.to_tolerance(self.Adapter(), 0.0244, floor=64, cap=64)
+        js = from_node(f"m.toTolerance({self.JS_ADAPTER}, 0.0244, "
+                       f"{{floor: 64, cap: 64}})")
+        self.assertEqual(mine["budget"]["would_need"], 72)
+        self.assertEqual(mine["budget"]["shortfall"], 1.13)
+        self.assertEqual(mine["budget"], js["budget"])
+
 
 @unittest.skipUnless(NODE, "node is not on PATH, so the cross-half contract cannot be checked")
 class BothHalvesRefuseTheSameThings(unittest.TestCase):
@@ -250,6 +263,36 @@ class BothHalvesRefuseTheSameThings(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             U.characterize(UnseededAdapter(), trials=20)
         self.assertIn("not reproducible", str(caught.exception))
+
+    def test_both_refuse_it_in_the_SAME_words_and_not_merely_at_the_same_time(self):
+        # The test above compares a substring, because `Math.random` and `random.random`
+        # cannot be made to return the same pair. This observable is unreproducible
+        # DETERMINISTICALLY -- a counter, not a generator -- so the whole refusal is
+        # comparable, and it is a refusal that prints four numbers. It went out through
+        # `%r` on one side and a template literal on the other until the formatter was
+        # made to cover it too.
+        counter = ("(() => { let i = 0; try { m.reproducible({a: () => 1 / 3 + i++ * 1e-16,"
+                   " b: () => 1}, [1000000]); return null; } catch (e) "
+                   "{ return e.message; } })()")
+        js = from_node(counter)
+        self.assertIsNotNone(js, "the JavaScript half accepted a non-reproducible one")
+
+        i = iter(range(99))
+        obs = {"a": lambda t, s: 1.0 / 3.0 + next(i) * 1e-16, "b": lambda t, s: 1.0}
+        with self.assertRaises(ValueError) as caught:
+            U.reproducible(obs, [1000000])
+        self.assertEqual(str(caught.exception), js)
+        # And at full precision, so the two values it is contrasting are two strings.
+        self.assertIn("returned 0.3333333333333333 and then 0.3333333333333334",
+                      str(caught.exception))
+
+    def test_both_refuse_to_render_fewer_than_one_significant_digit(self):
+        js = from_node("(() => { try { m.fmt.sig(0.4, 0); return null; } "
+                       "catch (e) { return e.message; } })()")
+        self.assertIsNotNone(js, "the JavaScript half rendered zero significant digits")
+        with self.assertRaises(ValueError) as caught:
+            U.fmt.sig(0.4, 0)
+        self.assertEqual(str(caught.exception), js)
 
     def test_both_refuse_a_tolerance_of_zero(self):
         js = from_node(

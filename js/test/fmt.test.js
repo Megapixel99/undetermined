@@ -97,6 +97,28 @@ test("the exponent is padded to two digits", () => {
   assert.equal(fmt.sig(1e100), "1e+100");
 });
 
+test("every digit is available when six would blur two values", () => {
+  // ALL_DIGITS is the whole shortest representation, which is what a message whose point
+  // is that two values DIFFER has to print: at six digits the pair below is one string
+  // twice.
+  const near = [1 / 3, 1 / 3 + 1e-16];
+  assert.equal(fmt.sig(near[0]), fmt.sig(near[1]));
+  assert.notEqual(fmt.sig(near[0], fmt.ALL_DIGITS), fmt.sig(near[1], fmt.ALL_DIGITS));
+  assert.equal(fmt.sig(near[0], fmt.ALL_DIGITS), "0.3333333333333333");
+  assert.equal(fmt.sig(1e-7, fmt.ALL_DIGITS), "1e-07");
+  assert.equal(fmt.sig(16777216, fmt.ALL_DIGITS), "16777216");
+});
+
+test("fewer than one significant digit is refused rather than punctuated", () => {
+  // There is no shortest string for "no digits": `round` returns nothing and the branches
+  // below it used to punctuate that into `undefinede+00` -- and, in the other half, into
+  // `0.`. Same refusal in both halves instead.
+  for (const digits of [0, -1]) {
+    assert.throws(() => fmt.sig(0.4, digits), /digits must be at least 1/);
+  }
+  assert.equal(fmt.sig(0.4, 1), "0.4");
+});
+
 test("the undefined values say so in words", () => {
   assert.equal(fmt.sig(NaN), "nan");
   assert.equal(fmt.sig(Infinity), "inf");

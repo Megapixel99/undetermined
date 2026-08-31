@@ -111,6 +111,12 @@ def to_tolerance(adapter, tolerance, seed0=17, floor=FLOOR_TRIALS, cap=CAP_TRIAL
                 "all_supported": not unsupported, "unsupported": sorted(unsupported),
                 "worst_mde": worst, "history": history,
                 "would_need": None if want is None else min(want, 10 ** 12),
-                "shortfall": None if want is None else round(want / float(cap), 2)}
+                # Through `fmt` and back, and not through `round`: Python rounds halves to
+                # even and JavaScript's `Math.round` rounds them up, so `want / cap` of
+                # exactly 1.125 is 1.12 in one half and 1.13 in the other. The formatter is
+                # the rule both halves already share, and a decimal string parses to the
+                # same double on both sides of it.
+                "shortfall": (None if want is None
+                              else float(fmt.fixed(want / float(cap), 2)))}
             return report
         trials = min(cap, max(int(trials * GROWTH), want))

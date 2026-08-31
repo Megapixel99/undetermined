@@ -39,13 +39,23 @@ rendering the two halves could agree on and is not given a special one here.
 """
 
 SIG_DIGITS = 6
+ALL_DIGITS = 17                     # a double's shortest decimal never needs more
 EXACT_INT = 9007199254740991        # 2**53 - 1, the last integer a double holds exactly
 
 _INF = float("inf")
 
+# Below one significant digit there is nothing left to be significant: `_round` hands back
+# an empty digit string and every branch under it would punctuate the empty string into
+# something that is not a number -- `0.` here, `undefinede+00` in the other half. A refusal
+# rather than either, and the same refusal in both halves.
+_NO_DIGITS = ("digits must be at least 1: a number rendered to fewer significant digits "
+              "than one is not a rendering of that number")
+
 
 def sig(x, digits=SIG_DIGITS):
     """`x` to `digits` significant digits. Exact integers are written out in full."""
+    if digits < 1:
+        raise ValueError(_NO_DIGITS)
     x = float(x)
     special = _special(x)
     if special is not None:

@@ -168,8 +168,8 @@ jobs:
           fi
           ran=$(echo "$out" | grep -c " \.\.\. ok")
           echo "parity assertions that ran: $ran"
-          if [ "$ran" -lt 14 ]; then
-            echo "::error::expected at least 14 parity tests, saw $ran"
+          if [ "$ran" -lt 17 ]; then
+            echo "::error::expected at least 17 parity tests, saw $ran"
             exit 1
           fi
 
