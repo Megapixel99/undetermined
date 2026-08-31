@@ -8,7 +8,7 @@
 
 export {
   UNDETERMINED, MIN_RATIO, MIN_MARGIN, PLATEAU_K, PLATEAU_RUN,
-  characterize, fit, plateau, heterogeneity, ladderFor, reproducible,
+  characterize, fit, plateau, heterogeneity, ladderFor, granuleFor, reproducible,
 } from "./core.js";
 
 // The shared formatter. Both halves print every user-visible number through it, and

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  UNDETERMINED, characterize, fit, heterogeneity, ladderFor, mde, plateau,
+  UNDETERMINED, characterize, fit, granuleFor, heterogeneity, ladderFor, mde, plateau,
   toTolerance, trialsFor,
 } from "../src/index.js";
 
@@ -120,4 +120,60 @@ test("to_tolerance reports support rather than only a number", () => {
   assert.ok(r.budget.history.length >= 1);
   // An UNDETERMINED observable is never chased with more trials.
   assert.ok(!r.budget.unsupported.includes("flat"));
+});
+
+/**
+ * The case 0.1.0 could not answer at all, with the control that keeps it honest.
+ *
+ * `exact` carries the constant 7 by construction. `drifting` is equally deterministic and
+ * carries no constant of this form. A fix that made `exact` recoverable by widening error
+ * bars would flatten `drifting` too, and a tool reporting a plateau for `drifting` is a way
+ * of finding constants that are not there.
+ */
+const deterministic = {
+  truths: () => [64, 256, 1024, 4096],
+  observables: {
+    exact: (truth) => truth / 7.0,
+    drifting: (truth) => 1000.0 * truth ** 0.37,
+  },
+};
+
+test("a deterministic observable is no longer UNDETERMINED", () => {
+  const r = characterize(deterministic, 8);
+  assert.ok(Math.abs(r.per_observable.exact.constant - 7.0) < 1e-6);
+});
+
+test("and a deterministic DRIFT is still refused", () => {
+  const r = characterize(deterministic, 8);
+  assert.equal(r.per_observable.drifting.constant, UNDETERMINED);
+  assert.ok(r.undetermined.includes("drifting"));
+});
+
+test("the ladder of a deterministic observable has rungs at all", () => {
+  const lad = ladderFor((t) => t / 7.0, [8, 16, 32, 64], 4);
+  assert.equal(lad.length, 4);
+  assert.ok(lad.every((row) => row.se > 0));
+});
+
+test("the error bar does not shrink by re-reading the same number", () => {
+  const [, se4] = fit((t) => t / 7.0, 512, 4);
+  const [, se400] = fit((t) => t / 7.0, 512, 400);
+  assert.ok(Math.abs(se4 - se400) < 1e-18);
+});
+
+test("the granule rule: integers are one unit, floats are their reported place", () => {
+  assert.equal(granuleFor([1033, 300033, 8]), 1);
+  assert.equal(granuleFor([2400056.0, 8056.0]), 1);
+  assert.equal(granuleFor([0.673, 0.697]), 1e-3);
+  assert.ok(granuleFor([0.673, 0.697]) > 0);
+  assert.equal(granuleFor([]), 0);
+});
+
+test("the finest reading sets the granule for the whole set", () => {
+  // max, not min: a coarse granule is how a drift gets flattened.
+  assert.equal(granuleFor([0.5, 0.25]), 1e-2);
+});
+
+test("the representation is a floor", () => {
+  assert.equal(granuleFor([8 / 7, 16 / 7, 32 / 7]), 8.881784197001252e-16);
 });

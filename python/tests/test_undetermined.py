@@ -9,10 +9,12 @@ ROOT = os.path.dirname(HERE)          # python/, where the package lives
 sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
-from _adapters import CoinAdapter, SingleObservableAdapter, UnseededAdapter  # noqa: E402
+from _adapters import (  # noqa: E402
+    CoinAdapter, DeterministicAdapter, SingleObservableAdapter, UnseededAdapter,
+)
 from undetermined import (  # noqa: E402
-    UNDETERMINED, characterize, fit, heterogeneity, mde, plateau, to_tolerance,
-    trials_for,
+    UNDETERMINED, characterize, fit, granule_for, heterogeneity, ladder_for, mde,
+    plateau, to_tolerance, trials_for,
 )
 
 
@@ -137,3 +139,62 @@ class ThePrimitives(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ADeterministicObservableIsNotUndetermined(unittest.TestCase):
+    """0.2.0. Before it, every one of these came back UNDETERMINED -- about a quantity the
+    tool had measured exactly, in the same words it uses for a quantity that has no constant
+    at all."""
+
+    def test_an_exact_deterministic_constant_is_recovered(self):
+        r = characterize(DeterministicAdapter(), trials=8)
+        self.assertAlmostEqual(r["per_observable"]["exact"]["constant"], 7.0, places=6)
+
+    def test_and_a_deterministic_DRIFT_is_still_refused(self):
+        # The control. A fix that only widened error bars would flatten this too.
+        r = characterize(DeterministicAdapter(), trials=8)
+        self.assertIs(r["per_observable"]["drifting"]["constant"], UNDETERMINED)
+        self.assertIn("drifting", r["undetermined"])
+
+    def test_the_ladder_has_rungs_at_all(self):
+        lad = ladder_for(lambda t, s: t / 7.0, [8, 16, 32, 64], 4)
+        self.assertEqual(len(lad), 4)
+        self.assertTrue(all(row["se"] > 0 for row in lad))
+
+    def test_the_error_bar_does_not_shrink_by_re_reading_the_same_number(self):
+        # Type B is not divided by sqrt(N). An error bar that fell when you looped would let
+        # any deterministic constant be made significant by asking twice.
+        _c4, se4 = fit(lambda t, s: t / 7.0, 512, 4)
+        _c400, se400 = fit(lambda t, s: t / 7.0, 512, 400)
+        self.assertAlmostEqual(se4, se400, places=15)
+
+    def test_a_noisy_observable_is_unchanged(self):
+        # The combined uncertainty reduces to Type A when the scatter dominates, so the
+        # constant a stochastic adapter reports must not move.
+        r = characterize(CoinAdapter(), trials=400)
+        self.assertAlmostEqual(r["per_observable"]["heads"]["constant"], 2.0, places=1)
+
+
+class TheGranuleRule(unittest.TestCase):
+    def test_integers_are_one_unit(self):
+        self.assertEqual(granule_for([1033, 300033, 8]), 1.0)
+
+    def test_an_integer_valued_float_is_still_an_integer(self):
+        self.assertEqual(granule_for([2400056.0, 8056.0]), 1.0)
+
+    def test_a_float_set_is_never_zero(self):
+        self.assertGreater(granule_for([0.673, 0.697]), 0.0)
+
+    def test_the_granule_is_the_reported_decimal_place(self):
+        self.assertEqual(granule_for([0.673, 0.697]), 1e-3)
+
+    def test_the_finest_reading_sets_it_for_the_whole_set(self):
+        # max, not min: a coarse granule is how a drift gets flattened.
+        self.assertEqual(granule_for([0.5, 0.25]), 1e-2)
+
+    def test_the_representation_is_a_floor(self):
+        import math
+        self.assertEqual(granule_for([8 / 7, 16 / 7, 32 / 7]), math.ulp(32 / 7))
+
+    def test_an_empty_set_is_zero(self):
+        self.assertEqual(granule_for([]), 0.0)

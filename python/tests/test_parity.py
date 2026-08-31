@@ -164,11 +164,34 @@ class TheArithmeticAgrees(unittest.TestCase):
         # A sample that ignores its seed is refused by `characterize`, but `fit` is the
         # primitive underneath and takes whatever it is handed -- which makes it the one
         # place the two halves can be compared on identical numbers.
+        #
+        # THIS TEST USED TO ASSERT `se == 0.0` IN BOTH HALVES, and that is worth keeping in
+        # the file rather than only in a changelog: the defect 0.2.0 fixes was not merely
+        # unnoticed, it was PINNED. A deterministic sample has no scatter, so the Type A
+        # error is zero, so `ladder_for` dropped the rung and the report said the constant
+        # could not be determined -- about a quantity it had measured exactly. The error is
+        # now the COMBINED uncertainty, and what the two halves must agree on is that.
         mine_c, mine_se = U.fit(lambda t, s: t / 2.0, 512, 50)
         js = from_node("m.fit((t, s) => t / 2.0, 512, 50)")
         self.assert_close(mine_c, js[0])
-        self.assertEqual(mine_se, 0.0)
-        self.assert_close(js[1], 0.0)
+        self.assertGreater(mine_se, 0.0)
+        self.assert_close(mine_se, js[1])
+
+    def test_the_granule_rule_agrees(self):
+        for vals in ([1033.0, 300033.0], [0.673, 0.697], [0.5, 0.25],
+                     [8 / 7, 16 / 7, 32 / 7], [1.0, 2.5], [1e-7, 2e-7], [0.0, 0.25]):
+            js = from_node("m.granuleFor(%s)" % json.dumps(vals))
+            self.assert_close(U.granule_for(vals), js)
+
+    def test_the_ladder_agrees_on_a_deterministic_observable(self):
+        # The case 0.1.0 could not answer at all: every rung dropped, ladder empty.
+        mine = U.ladder_for(lambda t, s: t / 7.0, [8, 16, 32, 64], 4)
+        js = from_node("m.ladderFor((t, s) => t / 7.0, [8, 16, 32, 64], 4)")
+        self.assertEqual(len(mine), 4)
+        self.assertEqual(len(js), 4)
+        for a, b in zip(mine, js):
+            self.assert_close(a["c"], b["c"])
+            self.assert_close(a["se"], b["se"])
 
 
 @unittest.skipUnless(NODE, "node is not on PATH, so the cross-half contract cannot be checked")

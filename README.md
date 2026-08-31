@@ -139,6 +139,53 @@ A spread only means something in units of the error on the thing that spread. Di
 the magnitude instead is how a large number gets mistaken for a real one, and it is the
 single mistake this library is shaped around not making.
 
+### What the noise is, when there is none — new in 0.2.0
+
+The rule above says compare against the noise. **Every error bar here used to be Type A** —
+the scatter of repeated draws, `sd/sqrt(N)`. An observable that answers the same number every
+time has none, so its standard error was zero, `ladder_for` dropped the rung, and the report
+said the constant could not be determined.
+
+**It said that about a quantity it had measured exactly**, in the same words it uses for a
+quantity that has no constant at all. Every capability this library was measured on was a
+stochastic simulation, so the case never came up. Pointed at real systems it is the common
+case, and a test in this repository *asserted* the old behaviour — the defect was not merely
+unnoticed, it was pinned.
+
+0.2.0 uses the **combined standard uncertainty** of metrology:
+
+```
+u = sqrt(u_A² + u_B²)      u_A = sd/sqrt(N)      u_B = granule/sqrt(12)
+```
+
+`u_B` is the resolution the observations are *reported* at, and it is **not divided by
+`sqrt(N)`** — repeating a deterministic measurement does not buy resolution, and an error bar
+that shrank when you looped would let any deterministic constant be made significant by asking
+twice. At `granule = 0` every formula reduces to the one 0.1.0 shipped.
+
+`granule_for(values)` / `granuleFor(values)` derives it, and you can pass your own to `fit`:
+
+| observations | granule |
+| --- | --- |
+| all integers | `1.0` |
+| otherwise | `10^-d` for the greatest decimal place any observation is reported at, floored at the ULP of the largest value |
+
+**It errs fine, on purpose.** A coarse granule widens every error bar, and wide error bars are
+how a search flattens a drift that was never constant. The alternatives — the greatest common
+divisor of the values, the spacing between them — can only err coarse, so neither is used, and
+taking the *maximum* decimal place across the set is the same argument again: one
+finely-reported reading pulls the whole granule fine.
+
+**What it does not do is make a drifting quantity plateau.** The fixtures ship the control:
+`exact` and `drifting` are both deterministic, `exact` is recovered and `drifting` is still
+`UNDETERMINED`, in both halves. A fix that widened error bars until the first one worked would
+have flattened the second.
+
+One consequence worth knowing if you compare halves: with `u_B` at 1e-16 the floating-point
+residue of a two-pass variance over *identical* readings stops being invisible, and it is
+language-dependent. Both halves now test for no scatter explicitly rather than computing a
+variance that is only nearly zero.
+
 ### The thresholds
 
 They are the contract, and `python/tests/test_parity.py` asserts both halves hold the

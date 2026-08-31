@@ -29,18 +29,96 @@ export const PLATEAU_RUN = 3;
 // ------------------------------------------------------------------ primitives
 
 /** c such that c * E[raw] === truth. Returns [c, standardError]. */
-export function fit(sample, truth, trials, seed0 = 0) {
-  const raws = [];
-  for (let i = 0; i < trials; i++) raws.push(sample(truth, seed0 + i));
+const SQRT12 = Math.sqrt(12);
+
+/** Decimal places in the shortest string that round-trips this float. */
+function decimals(value) {
+  const text = String(Number(value)).toLowerCase();
+  if (text.includes('e')) {
+    const [mant, exp] = text.split('e');
+    const frac = (mant.split('.')[1] || '').length;
+    return Math.max(0, frac - Number(exp));
+  }
+  return (text.split('.')[1] || '').length;
+}
+
+/**
+ * The spacing of the representation at `value`: 2**(e - 53) for frexp's exponent.
+ *
+ * Read from the exponent bits rather than from `Math.log2`, so it is exact at every power
+ * of two and agrees with Python's `math.ulp` digit for digit -- which the parity suite
+ * checks, because a resolution that differs between the halves is two instruments with one
+ * name.
+ */
+function ulp(value) {
+  const v = Math.abs(Number(value));
+  if (v === 0) return 0;
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, v);
+  const biased = (view.getUint32(0) >>> 20) & 0x7ff;
+  if (biased === 0) return 5e-324; // subnormal: the smallest representable step
+  return 2 ** (biased - 1023 + 1 - 53);
+}
+
+/**
+ * The resolution at which these observations are REPORTED.
+ *
+ * THE DEFECT THIS EXISTS FOR. Every error bar in this package used to be Type A — the
+ * scatter of repeated draws, `sd/sqrt(N)`. An observable that answers the same number every
+ * time has none, so `se` is zero, `ladderFor` drops the rung, and the report says the
+ * constant could not be determined. **It says that about a quantity it measured exactly.**
+ *
+ * The rule: every value an integer → 1.0; otherwise 10^-d for the greatest number of decimal
+ * places any observation is reported at, floored at the ULP of the largest value.
+ *
+ * IT ERRS FINE, ON PURPOSE. A coarse granule widens every error bar, and wide error bars are
+ * how a search flattens a drift that was never constant. The alternatives (the GCD of the
+ * values, the spacing between them) can only err coarse, so neither is used.
+ */
+export function granuleFor(values) {
+  const vals = Array.from(values, Number);
+  if (vals.length === 0) return 0;
+  if (vals.every((v) => Number.isInteger(v))) return 1;
+  const places = Math.max(...vals.map(decimals));
+  const nonzero = vals.filter((v) => v !== 0).map(Math.abs);
+  const floor = nonzero.length ? Math.max(...nonzero.map(ulp)) : 0;
+  return Math.max(10 ** -places, floor);
+}
+
+/**
+ * [c, u] for one rung, with the COMBINED standard uncertainty.
+ *
+ * `u = sqrt(u_A^2 + u_B^2)`, and `u_B` is NOT divided by sqrt(N): repeating a deterministic
+ * measurement does not buy resolution. At `granule = 0` this reduces to the Type A formula
+ * the package shipped with.
+ */
+function fromRaws(raws, truth, granule) {
   const mean = raws.reduce((a, b) => a + b, 0) / raws.length;
   if (mean === 0) return [null, null];
   const c = truth / mean;
+  // NO SCATTER MEANS NO SCATTER, and the explicit test is not a shortcut. Summing N copies
+  // of one float and dividing by N does not always return that float, so the two-pass
+  // variance of identical readings comes out near but not at zero — invisible while every
+  // error bar was Type A and dominant once u_B is a real 1e-16. It is also
+  // LANGUAGE-DEPENDENT: this half and the Python one disagreed on `fit(t/7, 512, 400)` by an
+  // order of magnitude for exactly this reason, and the parity suite caught it.
+  const flat = raws.length > 1 && Math.min(...raws) === Math.max(...raws);
   const varr =
-    raws.length > 1
+    raws.length > 1 && !flat
       ? raws.reduce((a, r) => a + (r - mean) ** 2, 0) / (raws.length - 1)
       : 0;
-  const cv = Math.sqrt(varr) / Math.abs(mean);
-  return [c, (Math.abs(c) * cv) / Math.sqrt(raws.length)];
+  const ua = Math.sqrt(varr) / Math.sqrt(raws.length);
+  const ub = granule / SQRT12;
+  const u = Math.hypot(ua, ub);
+  if (!u) return [null, null];
+  return [c, (Math.abs(c) * u) / Math.abs(mean)];
+}
+
+export function fit(sample, truth, trials, seed0 = 0, granule = null) {
+  const raws = [];
+  for (let i = 0; i < trials; i++) raws.push(sample(truth, seed0 + i));
+  const g = granule === null ? granuleFor(raws) : granule;
+  return fromRaws(raws, truth, g);
 }
 
 function sd(xs) {
@@ -87,10 +165,23 @@ export function plateau(ladder, k = PLATEAU_K, need = PLATEAU_RUN) {
 
 // ------------------------------------------------------------------ the report
 
+/**
+ * The ladder, with ONE granule derived across every rung's draws.
+ *
+ * Sampling happens once. The granule comes from the whole set rather than per rung because
+ * it is a property of the instrument, not of a reading, and the whole set can only give a
+ * finer answer than its coarsest member.
+ */
 export function ladderFor(sample, truths, trials, seed0 = 0) {
+  const drawn = truths.map((t) => {
+    const raws = [];
+    for (let i = 0; i < trials; i++) raws.push(sample(t, seed0 + i));
+    return [t, raws];
+  });
+  const granule = granuleFor(drawn.flatMap(([, raws]) => raws));
   const out = [];
-  for (const t of truths) {
-    const [c, se] = fit(sample, t, trials, seed0);
+  for (const [t, raws] of drawn) {
+    const [c, se] = fromRaws(raws, t, granule);
     if (c !== null && se) out.push({ truth: t, c, se });
   }
   return out;
