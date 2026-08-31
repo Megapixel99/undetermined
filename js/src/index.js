@@ -11,6 +11,10 @@ export {
   characterize, fit, plateau, heterogeneity, ladderFor, reproducible,
 } from "./core.js";
 
+// The shared formatter. Both halves print every user-visible number through it, and
+// `python/tests/test_parity.py` compares them digit for digit.
+export * as fmt from "./fmt.js";
+
 export {
   SIGMAS, FLOOR_TRIALS, CAP_TRIALS, GROWTH, mde, trialsFor, toTolerance,
 } from "./budget.js";

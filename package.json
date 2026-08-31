@@ -1,6 +1,6 @@
 {
   "name": "undetermined",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Point it at a program, get back what can and cannot be determined: a constant with an error bar, and an explicit undetermined list with reasons.",
   "keywords": [
     "empirical", "constant", "measurement", "plateau", "algorithm-analysis",
@@ -10,7 +10,11 @@
   "license": "MIT",
   "type": "module",
   "engines": { "node": ">=20.0.0" },
-  "exports": { ".": "./js/src/index.js", "./budget": "./js/src/budget.js" },
+  "exports": {
+    ".": "./js/src/index.js",
+    "./budget": "./js/src/budget.js",
+    "./fmt": "./js/src/fmt.js"
+  },
   "files": ["js/src", "README.md", "LICENSE"],
   "scripts": { "test": "node --test js/test/*.test.js" },
   "dependencies": {},

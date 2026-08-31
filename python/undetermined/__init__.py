@@ -10,6 +10,7 @@ back a number; this one has an `undetermined` list with reasons, and will put an
 observable on it rather than fit a plateau to a drift.
 """
 
+from . import fmt
 from .budget import mde, to_tolerance, trials_for
 from .core import (
     UNDETERMINED,
@@ -22,5 +23,5 @@ from .core import (
 )
 
 __all__ = ["characterize", "to_tolerance", "reproducible", "fit", "plateau",
-           "heterogeneity", "ladder_for", "mde", "trials_for", "UNDETERMINED"]
-__version__ = "0.1.0"
+           "heterogeneity", "ladder_for", "mde", "trials_for", "UNDETERMINED", "fmt"]
+__version__ = "0.1.1"

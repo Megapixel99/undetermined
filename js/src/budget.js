@@ -17,6 +17,7 @@
  */
 
 import { characterize, UNDETERMINED } from "./core.js";
+import * as fmt from "./fmt.js";
 
 export const SIGMAS = 3.0;          // an MDE is this many standard errors
 export const FLOOR_TRIALS = 400;
@@ -54,9 +55,9 @@ function annotate(report, tolerance) {
       row.why_unsupported =
         m === null
           ? "no constant was determined"
-          : `the constant is ${row.constant} but this measurement could not have ` +
-            `detected a ${tolerance} relative effect (MDE ${m}), so it does not support ` +
-            `a claim at that tolerance`;
+          : `the constant is ${fmt.sig(row.constant)} but this measurement could not ` +
+            `have detected a ${fmt.sig(tolerance, 3)} relative effect ` +
+            `(MDE ${fmt.sig(m, 3)}), so it does not support a claim at that tolerance`;
       if (m !== null && (worst === null || m > worst)) worst = m;
     }
   }

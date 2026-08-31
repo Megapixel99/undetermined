@@ -18,6 +18,8 @@
  * same answer on the same numbers.
  */
 
+import * as fmt from "./fmt.js";
+
 export const UNDETERMINED = null;
 export const MIN_RATIO = 3.0;
 export const MIN_MARGIN = 3.0;
@@ -73,8 +75,8 @@ export function plateau(ladder, k = PLATEAU_K, need = PLATEAU_RUN) {
         value: tail.reduce((a, r) => a + r.c / r.se ** 2, 0) / w,
         se: Math.sqrt(1 / w),
         from_truth: tail[0].truth,
-        why: `${tail.length} rungs from truth=${fmt(tail[0].truth)} agree within ` +
-             `${k.toFixed(1)} sigma`,
+        why: `${tail.length} rungs from truth=${fmt.sig(tail[0].truth)} agree within ` +
+             `${fmt.fixed(k, 1)} sigma`,
       };
     }
   }
@@ -214,17 +216,18 @@ function pick(ratios) {
   const live = usable.filter(([, v]) => v >= MIN_RATIO);
   if (!live.length) {
     return { choice: UNDETERMINED,
-             why: `no constant varies beyond ${MIN_RATIO.toFixed(0)}x its own error ` +
+             why: `no constant varies beyond ${fmt.fixed(MIN_RATIO, 0)}x its own error ` +
                   `across instances` };
   }
   const rank = live.sort((a, b) => b[1] - a[1]);
   if (rank.length > 1 && rank[0][1] < MIN_MARGIN * rank[1][1]) {
     return { choice: UNDETERMINED,
-             why: `${rank[0][0]} (${rank[0][1].toFixed(1)}) does not beat ${rank[1][0]} ` +
-                  `(${rank[1][1].toFixed(1)}) by ${MIN_MARGIN.toFixed(0)}x` };
+             why: `${rank[0][0]} (${fmt.fixed(rank[0][1], 1)}) does not beat ` +
+                  `${rank[1][0]} (${fmt.fixed(rank[1][1], 1)}) by ` +
+                  `${fmt.fixed(MIN_MARGIN, 0)}x` };
   }
   return { choice: rank[0][0],
-           why: `${rank[0][0]} varies ${rank[0][1].toFixed(1)}x its own error` };
+           why: `${rank[0][0]} varies ${fmt.fixed(rank[0][1], 1)}x its own error` };
 }
 
 function notes(per, informative, undetermined) {
@@ -236,11 +239,4 @@ function notes(per, informative, undetermined) {
     out.push(`which observable characterises the program: UNDETERMINED -- ${informative.why}`);
   }
   return out;
-}
-
-/** Python's `%g`, which is what the shared `why` strings are written against. */
-function fmt(x) {
-  if (Number.isInteger(x)) return String(x);
-  const s = x.toPrecision(6);
-  return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
 }

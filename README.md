@@ -154,6 +154,24 @@ explanatory strings.
 | `SIGMAS` | 3.0 | standard errors in a minimum detectable effect |
 | `FLOOR_TRIALS` / `CAP_TRIALS` | 400 / 40000 | the budget search bounds |
 
+### One formatter
+
+The `why` strings are part of that contract — a consumer that quotes one is quoting both
+halves — so every number they carry is rendered by a rule this package writes out rather
+than by whatever each language's `printf` does. `%g` and `toPrecision(6)` agree only on
+integers below 10^6 and non-integers in `[1e-4, 1e6)`; `%.1f` and `toFixed(1)` round
+halves in opposite directions. The rule lives in `undetermined.fmt` (Python) and
+`undetermined/fmt` (npm), and both halves are also pinned to the same expected strings
+independently, because two halves that had drifted together would still agree with each
+other:
+
+| | |
+| --- | --- |
+| the digits | the shortest decimal that round-trips to the double — `repr` and `String` both produce exactly that, and agree |
+| rounding | half **away from zero**, applied to those digits |
+| an exact integer | written out in full, never rounded and never in exponent form: a rung at `16777216` is not clarified by calling it `1.67772e+07` |
+| anything else | 6 significant digits, trailing zeros stripped, exponent notation outside `[1e-4, 1e6)` with the exponent padded to two places |
+
 ---
 
 ## This is a library, not a CLI

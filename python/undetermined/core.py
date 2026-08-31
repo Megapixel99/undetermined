@@ -18,6 +18,8 @@ The rule that survived every round: compare against the NOISE, never against the
 """
 import math
 
+from . import fmt
+
 UNDETERMINED = None
 MIN_RATIO = 3.0
 MIN_MARGIN = 3.0
@@ -67,9 +69,9 @@ def plateau(ladder, k=PLATEAU_K, need=PLATEAU_RUN):
                k * math.sqrt(tail[0]["se"] ** 2 + r["se"] ** 2) for r in tail[1:]):
             w = sum(1.0 / r["se"] ** 2 for r in tail)
             return {"value": sum(r["c"] / r["se"] ** 2 for r in tail) / w,
-                    "se": (1.0 / w) ** 0.5, "from_truth": tail[0]["truth"],
-                    "why": "%d rungs from truth=%g agree within %.1f sigma"
-                           % (len(tail), tail[0]["truth"], k)}
+                    "se": math.sqrt(1.0 / w), "from_truth": tail[0]["truth"],
+                    "why": "%d rungs from truth=%s agree within %s sigma"
+                           % (len(tail), fmt.sig(tail[0]["truth"]), fmt.fixed(k, 1))}
     return {"value": UNDETERMINED, "se": None, "from_truth": None,
             "why": "no run of %d rungs agrees; the constant is still moving at the top of "
                    "the ladder" % need}
@@ -188,15 +190,17 @@ def _pick(ratios):
     live = {k: v for k, v in usable.items() if v >= MIN_RATIO}
     if not live:
         return {"choice": UNDETERMINED,
-                "why": "no constant varies beyond %.0fx its own error across instances"
-                       % MIN_RATIO}
+                "why": "no constant varies beyond %sx its own error across instances"
+                       % fmt.fixed(MIN_RATIO, 0)}
     rank = sorted(live.items(), key=lambda kv: -kv[1])
     if len(rank) > 1 and rank[0][1] < MIN_MARGIN * rank[1][1]:
         return {"choice": UNDETERMINED,
-                "why": "%s (%.1f) does not beat %s (%.1f) by %.0fx"
-                       % (rank[0][0], rank[0][1], rank[1][0], rank[1][1], MIN_MARGIN)}
+                "why": "%s (%s) does not beat %s (%s) by %sx"
+                       % (rank[0][0], fmt.fixed(rank[0][1], 1), rank[1][0],
+                          fmt.fixed(rank[1][1], 1), fmt.fixed(MIN_MARGIN, 0))}
     return {"choice": rank[0][0],
-            "why": "%s varies %.1fx its own error" % (rank[0][0], rank[0][1])}
+            "why": "%s varies %sx its own error"
+                   % (rank[0][0], fmt.fixed(rank[0][1], 1))}
 
 
 def _notes(per, informative, undetermined):
