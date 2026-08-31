@@ -1,6 +1,6 @@
 {
   "name": "undetermined",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Point it at a program, get back what can and cannot be determined: a constant with an error bar, and an explicit undetermined list with reasons.",
   "keywords": [
     "empirical", "constant", "measurement", "plateau", "algorithm-analysis",

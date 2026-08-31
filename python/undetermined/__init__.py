@@ -24,4 +24,4 @@ from .core import (
 
 __all__ = ["characterize", "to_tolerance", "reproducible", "fit", "plateau",
            "heterogeneity", "ladder_for", "mde", "trials_for", "UNDETERMINED", "fmt"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
