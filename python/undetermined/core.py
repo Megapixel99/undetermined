@@ -105,17 +105,24 @@ def reproducible(obs, truths, seed0=17):
     A raise, not a `look`. The other refusals in this module describe what the program
     would not reveal; this one says the instrument was wired up wrong, and continuing
     would report a number about nothing.
+
+    Its numbers go through `fmt` like every other number this package prints, at
+    ALL_DIGITS rather than six: the message exists to say that two values differed, and
+    six significant digits would render a pair that differs in the tenth as one string
+    twice.
     """
+    whole = fmt.ALL_DIGITS
     for name, f in sorted(obs.items()):
         for truth in ({truths[0], truths[-1]} if truths else ()):
             first, second = f(truth, seed0), f(truth, seed0)
             if first != second:
                 raise ValueError(
-                    "observable %r is not reproducible: at truth=%r and seed=%r it "
-                    "returned %r and then %r. Every constant below is fitted from a mean "
+                    "observable `%s` is not reproducible: at truth=%s and seed=%s it "
+                    "returned %s and then %s. Every constant below is fitted from a mean "
                     "over seeds, so an observable that ignores its seed yields a mean "
                     "over noise -- which still plateaus, and would be reported as an "
-                    "answer." % (name, truth, seed0, first, second))
+                    "answer." % (name, fmt.sig(truth, whole), fmt.sig(seed0, whole),
+                                 fmt.sig(first, whole), fmt.sig(second, whole)))
 
 
 def characterize(adapter, trials=2500, seed0=17):

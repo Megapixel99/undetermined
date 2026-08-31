@@ -103,6 +103,28 @@ class TheRuleIsWrittenDownRatherThanDelegated(unittest.TestCase):
         self.assertEqual(fmt.sig(10 ** 30), fmt.sig(1e30))
         self.assertEqual(fmt.sig(10 ** 30), "1e+30")
 
+    def test_every_digit_is_available_when_six_would_blur_two_values(self):
+        # ALL_DIGITS is the whole shortest representation, which is what a message whose
+        # point is that two values DIFFER has to print: at six digits the pair below is
+        # one string twice.
+        near = (1.0 / 3.0, 1.0 / 3.0 + 1e-16)
+        self.assertEqual(fmt.sig(near[0]), fmt.sig(near[1]))
+        self.assertNotEqual(fmt.sig(near[0], fmt.ALL_DIGITS),
+                            fmt.sig(near[1], fmt.ALL_DIGITS))
+        self.assertEqual(fmt.sig(near[0], fmt.ALL_DIGITS), "0.3333333333333333")
+        self.assertEqual(fmt.sig(1e-7, fmt.ALL_DIGITS), "1e-07")
+        self.assertEqual(fmt.sig(16777216, fmt.ALL_DIGITS), "16777216")
+
+    def test_fewer_than_one_significant_digit_is_refused_rather_than_punctuated(self):
+        # There is no shortest string for "no digits": `_round` returns nothing and the
+        # branches below it used to punctuate that into `0.` -- and, in the other half,
+        # into `undefinede+00`. Same refusal in both halves instead.
+        for digits in (0, -1):
+            with self.assertRaises(ValueError) as caught:
+                fmt.sig(0.4, digits)
+            self.assertIn("digits must be at least 1", str(caught.exception))
+        self.assertEqual(fmt.sig(0.4, 1), "0.4")
+
     def test_the_undefined_values_say_so_in_words(self):
         self.assertEqual(fmt.sig(float("nan")), "nan")
         self.assertEqual(fmt.sig(float("inf")), "inf")
