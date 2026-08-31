@@ -51,3 +51,31 @@ class SingleObservableAdapter(CoinAdapter):
     @property
     def observables(self):
         return {"heads": self._heads}
+
+
+class DeterministicAdapter:
+    """The case 0.1.0 could not answer at all, with the control that keeps it honest.
+
+    `exact` answers the same number for every seed and carries the constant 7 by
+    construction. `drifting` is equally deterministic and carries NO constant of this form:
+    its expectation grows as truth**0.37, so `truth / E[drifting]` climbs every rung.
+
+    The pair is the point. A fix that makes `exact` recoverable by widening error bars would
+    make `drifting` recoverable too, and a tool that reports a plateau for `drifting` is a
+    way of finding constants that are not there.
+    """
+
+    def truths(self):
+        return [64, 256, 1024, 4096]
+
+    @property
+    def observables(self):
+        return {"exact": self._exact, "drifting": self._drifting}
+
+    @staticmethod
+    def _exact(truth, seed):
+        return truth / 7.0
+
+    @staticmethod
+    def _drifting(truth, seed):
+        return 1000.0 * truth ** 0.37

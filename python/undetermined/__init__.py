@@ -16,6 +16,7 @@ from .core import (
     UNDETERMINED,
     characterize,
     fit,
+    granule_for,
     heterogeneity,
     ladder_for,
     plateau,
@@ -23,5 +24,6 @@ from .core import (
 )
 
 __all__ = ["characterize", "to_tolerance", "reproducible", "fit", "plateau",
-           "heterogeneity", "ladder_for", "mde", "trials_for", "UNDETERMINED", "fmt"]
-__version__ = "0.1.3"
+           "heterogeneity", "ladder_for", "granule_for", "mde", "trials_for",
+           "UNDETERMINED", "fmt"]
+__version__ = "0.2.0"

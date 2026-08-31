@@ -29,16 +29,110 @@ PLATEAU_RUN = 3
 
 # ---------------------------------------------------------------- primitives
 
-def fit(sample, truth, trials, seed0=0):
-    """c such that c * E[raw] == truth. Returns (c, standard_error)."""
-    raws = [sample(truth, seed0 + i) for i in range(trials)]
+SQRT12 = math.sqrt(12.0)
+
+
+def _decimals(value):
+    """Decimal places in the shortest string that round-trips this float."""
+    text = repr(float(value)).lower()
+    if "e" in text:
+        mant, _, exp = text.partition("e")
+        frac = len(mant.partition(".")[2])
+        return max(0, frac - int(exp))
+    return len(text.partition(".")[2])
+
+
+def _ulp(value):
+    """The spacing of the representation at `value`. 2**(e-53) for frexp's exponent."""
+    v = abs(float(value))
+    if v == 0.0:
+        return 0.0
+    _m, e = math.frexp(v)
+    return 2.0 ** (e - 53)
+
+
+def granule_for(values):
+    """The resolution at which these observations are REPORTED.
+
+    THE DEFECT THIS EXISTS FOR. Every error bar in this package used to be Type A -- the
+    scatter of repeated draws, `sd/sqrt(N)`. An observable that answers the same number every
+    time has none, so `se` is zero, `ladder_for` drops the rung, and the report says the
+    constant could not be determined. **It says that about a quantity it measured exactly.**
+    The eleven capabilities this package was measured on were all stochastic simulations, so
+    the case never arose; pointed at real systems it is the common case, and pointed at a
+    corpus of ordinary functions it is nearly the only case.
+
+    The metrological answer is older than this package: an instrument reporting whole units
+    carries a Type B uncertainty of one unit's worth of quantisation, `granule/sqrt(12)`,
+    whether or not you read it twice. This derives that granule from what the observations
+    themselves carry:
+
+      * every value an integer -> 1.0;
+      * otherwise -> 10^-d for the greatest number of decimal places any observation is
+        reported at, floored at the ULP of the largest value, so it is never finer than the
+        representation can carry.
+
+    IT ERRS FINE, ON PURPOSE. A coarse granule widens every error bar, and wide error bars are
+    how a search flattens a drift that was never constant -- the failure this package's
+    plateau rule exists to prevent. The alternatives (the greatest common divisor of the
+    values, the spacing between them) can only err coarse, so neither is used, and taking the
+    MAXIMUM decimal count across the set is the same argument once more: one finely-reported
+    reading pulls the whole granule fine.
+
+    What it does NOT do is make a drifting quantity plateau. A constant that is still moving
+    at the top of the ladder is still moving; what changes is that the ladder exists at all.
+    """
+    vals = [float(v) for v in values]
+    if not vals:
+        return 0.0
+    if all(v.is_integer() for v in vals):
+        return 1.0
+    places = max(_decimals(v) for v in vals)
+    nonzero = [abs(v) for v in vals if v]
+    floor = max(_ulp(v) for v in nonzero) if nonzero else 0.0
+    return max(10.0 ** -places, floor)
+
+
+def _from_raws(raws, truth, granule):
+    """(c, u) for one rung, with the COMBINED standard uncertainty.
+
+    `u = sqrt(u_A^2 + u_B^2)`, and `u_B` is NOT divided by sqrt(N): repeating a deterministic
+    measurement does not buy resolution, and an error bar that shrinks when you re-read the
+    same number is manufacturing precision. At `granule = 0` every line here reduces to the
+    Type A formula this package shipped with.
+    """
     mean = sum(raws) / len(raws)
     if mean == 0.0:
         return None, None
     c = truth / mean
-    var = sum((r - mean) ** 2 for r in raws) / (len(raws) - 1) if len(raws) > 1 else 0.0
-    cv = math.sqrt(var) / abs(mean)
-    return c, abs(c) * cv / math.sqrt(len(raws))
+    # NO SCATTER MEANS NO SCATTER, and the explicit test is not a shortcut. Summing N copies
+    # of one float and dividing by N does not always return that float, so the two-pass
+    # variance of identical readings comes out at ~1e-30 rather than 0 -- invisible while
+    # every error bar was Type A and dominant once u_B is a real 1e-16. It is also
+    # LANGUAGE-DEPENDENT: the JS half and this one disagreed on `fit(t/7, 512, 400)` by an
+    # order of magnitude for exactly this reason, and the parity suite caught it.
+    var = 0.0
+    if len(raws) > 1 and min(raws) != max(raws):
+        var = sum((r - mean) ** 2 for r in raws) / (len(raws) - 1)
+    ua = math.sqrt(var) / math.sqrt(len(raws))
+    ub = granule / SQRT12
+    u = math.hypot(ua, ub)
+    if not u:
+        return None, None
+    return c, abs(c) * u / abs(mean)
+
+
+def fit(sample, truth, trials, seed0=0, granule=None):
+    """c such that c * E[raw] == truth. Returns (c, standard_error).
+
+    `granule` defaults to one derived from THIS rung's own draws. `ladder_for` derives one
+    across the WHOLE ladder and passes it in, which is the finer and therefore safer of the
+    two: a single rung of identical readings can report fewer decimal places than the ladder
+    as a whole, and fewer decimal places means a coarser granule.
+    """
+    raws = [sample(truth, seed0 + i) for i in range(trials)]
+    g = granule_for(raws) if granule is None else granule
+    return _from_raws(raws, truth, g)
 
 
 def _sd(xs):
@@ -80,9 +174,17 @@ def plateau(ladder, k=PLATEAU_K, need=PLATEAU_RUN):
 # ---------------------------------------------------------------- the report
 
 def ladder_for(sample, truths, trials, seed0=0):
+    """The ladder, with ONE granule derived across every rung's draws.
+
+    Sampling happens once. The granule is derived from the whole set rather than per rung
+    because it is a property of the instrument, not of a reading, and because the whole set
+    can only give a finer answer than its coarsest member.
+    """
+    drawn = [(t, [sample(t, seed0 + i) for i in range(trials)]) for t in truths]
+    granule = granule_for([r for _t, raws in drawn for r in raws])
     out = []
-    for t in truths:
-        c, se = fit(sample, t, trials, seed0)
+    for t, raws in drawn:
+        c, se = _from_raws(raws, t, granule)
         if c is not None and se:
             out.append({"truth": t, "c": c, "se": se})
     return out
