@@ -9,7 +9,7 @@
 
 Plenty of libraries fit a curve to measurements and hand you back a number. This one
 hands back a number *with the error bar it was decided by*, plus an explicit
-`undetermined` list with a reason on each entry — and it will put an observable on that
+`undetermined` list with a reason on each entry, and it will put an observable on that
 list rather than fit a plateau to a drift.
 
 ```
@@ -87,11 +87,11 @@ report.undetermined;                    // ['flat']
 | `truths()` | yes | the controllable input values, known by construction |
 | `observables` | yes | `{name: (truth, seed) -> number}`, at least two |
 | `instances()` | no | sibling instances of the same family |
-| `knobs` | no | `{name: [values]}` — parameters of the program itself |
+| `knobs` | no | `{name: [values]}`: parameters of the program itself |
 | `perturbed(knob, v)` | with `knobs` | the observables with that knob set to that value |
 
 At least two observables, always. With one there is no choice to make, so the library
-cannot be shown to make one — it raises rather than reporting a confident single answer.
+cannot be shown to make one; it raises rather than reporting a confident single answer.
 
 ### Deriving the trial count instead of guessing it
 
@@ -116,7 +116,7 @@ Three refusals, and each is the answer to a way of being confidently wrong.
 **An observable that ignores its seed** raises immediately. `fit` averages an observable
 over `trials` *different* seeds, so an observable that reads the clock or an unseeded RNG
 produces a mean over noise. A mean over noise still has a standard error, still forms a
-ladder, and can still plateau — every guard downstream compares against that error, so a
+ladder, and can still plateau; every guard downstream compares against that error, so a
 broken adapter does not produce a wrong-looking answer, it produces a **confident** one.
 Each observable is called twice with the same `(truth, seed)` at the first and last rung;
 a disagreement is a wiring error, not a finding, so it throws.
@@ -142,7 +142,7 @@ single mistake this library is shaped around not making.
 ### The thresholds
 
 They are the contract, and `python/tests/test_parity.py` asserts both halves hold the
-same ones and produce the same output on the same numbers — including the same
+same ones and produce the same output on the same numbers, including the same
 explanatory strings.
 
 | constant | value | what it gates |
@@ -156,8 +156,8 @@ explanatory strings.
 
 ### One formatter
 
-The `why` strings are part of that contract — a consumer that quotes one is quoting both
-halves — so every number they carry is rendered by a rule this package writes out rather
+The `why` strings are part of that contract: a consumer that quotes one is quoting both
+halves, so every number they carry is rendered by a rule this package writes out rather
 than by whatever each language's `printf` does. `%g` and `toPrecision(6)` agree only on
 integers below 10^6 and non-integers in `[1e-4, 1e6)`; `%.1f` and `toFixed(1)` round
 halves in opposite directions. The rule lives in `undetermined.fmt` (Python) and
@@ -167,7 +167,7 @@ other:
 
 | | |
 | --- | --- |
-| the digits | the shortest decimal that round-trips to the double — `repr` and `String` both produce exactly that, and agree |
+| the digits | the shortest decimal that round-trips to the double: `repr` and `String` both produce exactly that, and agree |
 | rounding | half **away from zero**, applied to those digits |
 | an exact integer | written out in full, never rounded and never in exponent form: a rung at `16777216` is not clarified by calling it `1.67772e+07` |
 | anything else | 6 significant digits, trailing zeros stripped, exponent notation outside `[1e-4, 1e6)` with the exponent padded to two places |
@@ -187,7 +187,7 @@ the package ships an import and no console script.
 The `nondet` edge was considered and **rejected**. `nondet` addresses a function as
 `FILE::NAME` so it can re-run it in fresh processes; this library's observables are
 closures inside an adapter object and have no such address, so `nondet` cannot probe
-them. Wiring it in would have meant either a fake file path or a check that never ran —
+them. Wiring it in would have meant either a fake file path or a check that never ran:
 a dependency that looks like a guarantee and is not. The reproducibility precondition is
 implemented natively in both halves instead, and it is checked in the same call that
 would have needed the guarantee. `nondet` remains the right tool for the *functions your
@@ -202,7 +202,7 @@ node --test js/test/*.test.js
 ```
 
 The parity suite skips when `node` is not on PATH, so a Python-only contributor can still
-run everything else. CI asserts it was **not** skipped — a skipped test and a passing one
+run everything else. CI asserts it was **not** skipped: a skipped test and a passing one
 look identical in a tally.
 
 ## License
