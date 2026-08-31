@@ -1,0 +1,327 @@
+# A tool whose whole claim is "it will say UNDETERMINED rather than guess" has to answer
+# for its own gates.
+#
+# It ships TWO HALVES from one tree -- `undetermined` on PyPI and on npm -- and the gates
+# below are this package's own properties pointed back at the package:
+#
+#   1. IT CAN SAY BOTH THINGS. A tool that always answered "undetermined" would pass every
+#      test that checks it does not guess, and would be useless. A tool that always
+#      answered with a number would pass every test that checks it reports one. The
+#      `itself` job below runs one adapter whose constant IS determined and one whose
+#      constant is NOT, and asserts each verdict -- because a verdict is only evidence if
+#      the other verdict was reachable.
+#
+#   2. THE TWO HALVES ARE ONE INSTRUMENT. Every threshold here is a judgement call, and a
+#      half that drifted on one would answer a different question under the same
+#      documentation. The parity suite compares them directly, and this file asserts the
+#      parity suite was not SKIPPED -- a skip and a pass look identical in a tally, which
+#      is the failure this package's sibling `didrun` exists for.
+#
+#   3. NO DEPENDENCIES, ASSERTED. `dependencies = []` is a claim about the code, not a
+#      check on it.
+#
+# Action versions are pinned at v7 deliberately. Older majors still run, on a Node the
+# runner silently substitutes, and a pin that is wrong for its own runtime is invisible
+# in a pass/fail -- you only see it in an annotation nobody reads.
+name: ci
+
+on:
+  push:
+    # `master` only. A branch with an open PR matches both triggers and every job runs
+    # twice, and a concurrency group does NOT fix it: the push event keys on
+    # `refs/heads/<branch>` while the pull_request event keys on `<branch>`, so they
+    # land in different groups.
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  # `release.yml` calls this workflow rather than copying the jobs into itself. A
+  # release gate that has drifted from the suite it claims to be is worse than no gate.
+  workflow_call:
+
+# The Python half lives in `python/` beside `js/`, and is still IMPORTED as
+# `undetermined`. Nothing here installs the package for the test jobs, so the interpreter
+# is told where to find it once.
+env:
+  PYTHONPATH: python
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is what `pyproject.toml` claims, and the claim is checked rather
+        # than trusted: `requires-python = ">=3.9"` is a promise, and a promise nothing
+        # runs is the stale-documentation defect in a metadata file. A sibling package
+        # in this network shipped a 3.12-only f-string under a ">=3.9" floor and did not
+        # import at all on the version it advertised.
+        python-version: ['3.9', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'   # the parity tests shell out to it
+
+      - name: no dependencies, and that is a design constraint
+        run: |
+          set -euo pipefail
+          if python3 -c "import undetermined, undetermined.core, undetermined.budget" 2>&1 \
+             | grep -q "ModuleNotFoundError"; then
+            echo "::error::undetermined imported something outside the standard library"
+            exit 1
+          fi
+          python3 -c "import undetermined; print('undetermined', undetermined.__version__)"
+
+      - name: the suites
+        run: python3 -m unittest discover -s python/tests -v
+
+  javascript:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `package.json` says `>=20`, and `node:test` is what the suites use.
+        node-version: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: no dependencies here either
+        run: |
+          set -euo pipefail
+          if [ -d node_modules ]; then
+            echo "::error::node_modules is committed"
+            exit 1
+          fi
+          node -e "const p=require('./package.json');
+                   if (Object.keys(p.dependencies||{}).length) {
+                     console.error('::error::package.json declares dependencies');
+                     process.exit(1);
+                   }
+                   console.log(p.name, p.version)"
+
+      - name: the suites
+        run: node --test js/test/*.test.js
+
+  versions:
+    # THE VERSION LIVES IN THREE FILES AND THAT IS THREE PLACES TO DRIFT.
+    # `pyproject.toml` is what PyPI publishes, `package.json` is what npm publishes, and
+    # `__version__` is what a user who imports the package reads back. A release where
+    # the first two agree and the third does not reports the wrong number to everybody
+    # who asks it politely.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: all three agree
+        run: |
+          set -euo pipefail
+          py=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          js=$(node -p "require('./package.json').version")
+          # Imported rather than grepped: this is the number a user actually gets back.
+          # PYTHONDONTWRITEBYTECODE so the check leaves no `.pyc` for a later run to
+          # read -- cache invalidation is keyed on mtime at one-second granularity.
+          dunder=$(PYTHONDONTWRITEBYTECODE=1 python3 -c "import undetermined; print(undetermined.__version__)")
+          echo "pyproject=$py  package.json=$js  __version__=$dunder"
+          if [ "$py" != "$js" ] || [ "$py" != "$dunder" ]; then
+            echo "::error::the three versions disagree"
+            exit 1
+          fi
+
+  parity:
+    # THE TWO HALVES ARE ONE INSTRUMENT, OR THEY ARE TWO INSTRUMENTS WITH ONE NAME.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: the halves agree, and the test was not skipped
+        # `skipUnless(node)` keeps the suite runnable for a Python-only contributor. In
+        # CI a skip and a pass look identical in a tally, so the count is asserted.
+        run: |
+          set -euo pipefail
+          out=$(python3 -m unittest discover -s python/tests -p 'test_parity.py' -v 2>&1)
+          echo "$out"
+          if echo "$out" | grep -q "skipped"; then
+            echo "::error::the parity tests were SKIPPED, so nothing checked the contract"
+            exit 1
+          fi
+          ran=$(echo "$out" | grep -c " \.\.\. ok")
+          echo "parity assertions that ran: $ran"
+          if [ "$ran" -lt 8 ]; then
+            echo "::error::expected at least 8 parity tests, saw $ran"
+            exit 1
+          fi
+
+  itself:
+    # THE DIVERGENCE GATE. Both verdicts must be reachable, or neither is evidence.
+    #
+    # The two adapters below differ in exactly one way. `heads` has expectation truth/2,
+    # so c = truth / (truth/2) = 2 at every rung and the ladder plateaus. `flat` has an
+    # expectation that does not depend on truth at all, so c = truth/6 climbs with every
+    # rung and no run of rungs ever agrees. One report, two verdicts, from one call.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: it reports a constant when there is one, and refuses when there is not
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import random
+          from undetermined import characterize, UNDETERMINED
+
+          class Coin:
+              def truths(self):
+                  return [8, 32, 128, 512]
+
+              @property
+              def observables(self):
+                  def heads(truth, seed):
+                      r = random.Random(seed)
+                      return sum(1 for _ in range(truth) if r.random() < 0.5)
+
+                  def flat(truth, seed):
+                      r = random.Random(seed)
+                      return sum(1 for _ in range(12) if r.random() < 0.5) + 0.5
+
+                  return {"heads": heads, "flat": flat}
+
+          rep = characterize(Coin(), trials=600)
+          h = rep["per_observable"]["heads"]
+          f = rep["per_observable"]["flat"]
+          print("heads:", h["constant"], "+/-", h["constant_se"], "|", h["plateau"]["why"])
+          print("flat: ", f["constant"], "|", f["plateau"]["why"])
+          print("undetermined:", rep["undetermined"])
+
+          assert h["constant"] is not UNDETERMINED, "the determined case reported no constant"
+          assert abs(h["constant"] - 2.0) < 0.05, h["constant"]
+          assert "heads" not in rep["undetermined"]
+
+          assert f["constant"] is UNDETERMINED, "a constant that never settles was reported anyway"
+          assert rep["undetermined"] == ["flat"], rep["undetermined"]
+          assert any(n.startswith("`flat`") for n in rep["notes"]), rep["notes"]
+          print("OK: both verdicts reachable from one report")
+          PY
+
+      - name: and the JavaScript half says the same about the same shapes
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { characterize, UNDETERMINED } from "./js/src/index.js";
+            const mulberry = (s) => () => {
+              s |= 0; s = (s + 0x6D2B79F5) | 0;
+              let t = Math.imul(s ^ (s >>> 15), 1 | s);
+              t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+              return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+            const adapter = {
+              truths: () => [8, 32, 128, 512],
+              observables: {
+                heads: (truth, seed) => { const r = mulberry(seed); let n = 0;
+                  for (let i = 0; i < truth; i++) if (r() < 0.5) n++; return n; },
+                flat: (truth, seed) => { const r = mulberry(seed); let n = 0;
+                  for (let i = 0; i < 12; i++) if (r() < 0.5) n++; return n + 0.5; },
+              },
+            };
+            const rep = characterize(adapter, { trials: 600 });
+            const h = rep.per_observable.heads, f = rep.per_observable.flat;
+            console.log("heads:", h.constant, "+/-", h.constant_se, "|", h.plateau.why);
+            console.log("flat: ", f.constant, "|", f.plateau.why);
+            if (h.constant === UNDETERMINED) {
+              console.error("::error::the determined case reported no constant");
+              process.exit(1);
+            }
+            if (Math.abs(h.constant - 2.0) >= 0.05) {
+              console.error("::error::expected c=2, got " + h.constant);
+              process.exit(1);
+            }
+            if (f.constant !== UNDETERMINED || rep.undetermined.join() !== "flat") {
+              console.error("::error::a constant that never settles was reported anyway");
+              process.exit(1);
+            }
+            console.log("OK: both verdicts reachable from one report");
+          '
+
+  artifacts:
+    # THE SHIPPED ARTIFACTS, not the source tree. This is a library rather than a CLI --
+    # an adapter is a code object with closures in it, so there is nothing to pass on a
+    # command line -- and what a user gets is therefore an import.
+    #
+    # PYTHONPATH IS DELIBERATELY EMPTY HERE. The workflow-level `PYTHONPATH: python` is
+    # what lets the test jobs import without installing, and it also lets *pip* import
+    # the package, which makes pip announce it is already installed and skip the install.
+    # The job that exists to prove the built artifact works must not inherit the shortcut
+    # that makes the source importable.
+    env:
+      PYTHONPATH: ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: build both, install both, import both
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet build
+          python3 -m build --wheel --outdir /tmp/dist
+          npm pack --pack-destination /tmp/dist
+
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install /tmp/dist/*.whl
+
+          # From /tmp, so a stray import of the source tree cannot pass for the wheel.
+          cd /tmp
+          /tmp/venv/bin/python - <<'PY'
+          import importlib.metadata as md
+          import undetermined
+          # The INSTALLED metadata rather than the file: `tomllib` is 3.11+, and what a
+          # user actually gets is what the wheel declares, not what the source says.
+          requires = md.requires("undetermined") or []
+          assert requires == [], requires
+          assert undetermined.characterize and undetermined.plateau and undetermined.mde
+          print("wheel imports", undetermined.__version__, "with no dependencies")
+          PY
+
+          mkdir -p /tmp/tarball && tar -xzf /tmp/dist/*.tgz -C /tmp/tarball
+          node --input-type=module -e '
+            import * as m from "/tmp/tarball/package/js/src/index.js";
+            for (const n of ["characterize", "plateau", "mde", "trialsFor", "toTolerance"]) {
+              if (typeof m[n] !== "function") {
+                console.error("::error::the packed tarball is missing " + n);
+                process.exit(1);
+              }
+            }
+            console.log("tarball imports clean");
+          '
