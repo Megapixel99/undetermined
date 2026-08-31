@@ -72,7 +72,7 @@ jobs:
       - name: no dependencies, and that is a design constraint
         run: |
           set -euo pipefail
-          if python3 -c "import undetermined, undetermined.core, undetermined.budget" 2>&1 \
+          if python3 -c "import undetermined, undetermined.core, undetermined.budget, undetermined.fmt" 2>&1 \
              | grep -q "ModuleNotFoundError"; then
             echo "::error::undetermined imported something outside the standard library"
             exit 1
@@ -168,8 +168,8 @@ jobs:
           fi
           ran=$(echo "$out" | grep -c " \.\.\. ok")
           echo "parity assertions that ran: $ran"
-          if [ "$ran" -lt 8 ]; then
-            echo "::error::expected at least 8 parity tests, saw $ran"
+          if [ "$ran" -lt 14 ]; then
+            echo "::error::expected at least 14 parity tests, saw $ran"
             exit 1
           fi
 

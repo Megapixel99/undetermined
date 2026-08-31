@@ -75,6 +75,13 @@ class TheArithmeticAgrees(unittest.TestCase):
                      {"truth": 128, "c": 3.0, "se": 0.01},
                      {"truth": 512, "c": 4.0, "se": 0.01}]
 
+    # Every value in issue #1's table, plus the two `%.1f` / `toFixed(1)` rounding cases
+    # and the edges of the exactly-representable integers.
+    FORMATTER_CASES = [0, 8, 512, 999999, 1000000, 1048576, 16777216, 9007199254740991,
+                       9007199254740992.0, 1e21, 1.5, 0.25, 2.25, 0.0001, 1.2345e-05,
+                       1e-07, 1234567.5, 999999.5, 1.0 / 3.0, 0.1 + 0.2, 2.675, -1048576,
+                       -1.2345e-05, -2.5, 1e300, 5e-324]
+
     def assert_close(self, a, b, msg=""):
         self.assertAlmostEqual(a, b, places=10, msg=msg)
 
@@ -105,6 +112,54 @@ class TheArithmeticAgrees(unittest.TestCase):
         self.assertIsNone(U.trials_for(0.005, 0.01, 900))
         self.assertIsNone(from_node("m.trialsFor(0.005, 0.01, 900)"))
 
+    # THE BAND. `%g` and `toPrecision(6)` agreed on integers below 1e6 and on non-integers
+    # in [1e-4, 1e6) and disagreed everywhere else, and every fixture above sits inside
+    # that band -- which is why the `why` assertion above was green for a defect that was
+    # always there (issue #1). These values are outside it, in all three of the ways the
+    # two formatters used to part company.
+    OUT_OF_BAND = [1000000, 1048576, 16777216, 1e21, 1.2345e-05, 1e-07, 1234567.5]
+
+    def test_the_shared_formatter_agrees_digit_for_digit(self):
+        js = from_node("%s.map((x) => [m.fmt.sig(x), m.fmt.sig(x, 3), m.fmt.fixed(x, 1), "
+                       "m.fmt.fixed(x, 0)])" % json.dumps(self.FORMATTER_CASES))
+        mine = [[U.fmt.sig(x), U.fmt.sig(x, 3), U.fmt.fixed(x, 1), U.fmt.fixed(x, 0)]
+                for x in self.FORMATTER_CASES]
+        for x, a, b in zip(self.FORMATTER_CASES, mine, js):
+            self.assertEqual(a, b, "the halves render %r differently" % (x,))
+
+    def test_the_shared_formatter_agrees_on_the_values_that_are_not_numbers(self):
+        self.assertEqual([U.fmt.sig(float("nan")), U.fmt.sig(float("inf")),
+                          U.fmt.sig(float("-inf")), U.fmt.fixed(float("nan"), 1)],
+                         from_node("[m.fmt.sig(NaN), m.fmt.sig(Infinity), "
+                                   "m.fmt.sig(-Infinity), m.fmt.fixed(NaN, 1)]"))
+
+    def test_plateau_explains_a_ladder_outside_that_band_in_the_same_words(self):
+        # `why` names the LOWEST rung of the plateau, so a fixture only reaches the
+        # formatter when the plateau itself starts out of band -- appending a high rung to
+        # a ladder that was already flat from truth=8 still reports truth=8.
+        for base in self.OUT_OF_BAND:
+            ladder = [{"truth": base * n, "c": 2.0, "se": 0.01} for n in (1, 2, 4)]
+            mine = U.plateau(ladder)
+            js = from_node("m.plateau(%s)" % json.dumps(ladder))
+            self.assertEqual(mine["why"], js["why"],
+                             "the two halves explain a plateau from truth=%r differently"
+                             % (base,))
+            self.assertIn("2.0 sigma", mine["why"])
+
+    def test_plateau_agrees_where_a_drifting_ladder_settles_late(self):
+        # The shape the reporter hit: the low rungs are still moving and the plateau begins
+        # at a rung whose size is exactly where the two formatters disagreed.
+        ladder = [{"truth": 4096, "c": 1.0, "se": 0.01},
+                  {"truth": 65536, "c": 1.5, "se": 0.01},
+                  {"truth": 1048576, "c": 2.0, "se": 0.01},
+                  {"truth": 16777216, "c": 2.0, "se": 0.01},
+                  {"truth": 268435456, "c": 2.0, "se": 0.01}]
+        mine = U.plateau(ladder)
+        js = from_node("m.plateau(%s)" % json.dumps(ladder))
+        self.assertEqual(mine["from_truth"], 1048576)
+        self.assertEqual(mine["why"], js["why"])
+        self.assertEqual(mine["why"], "3 rungs from truth=1048576 agree within 2.0 sigma")
+
     def test_fit_agrees_on_a_deterministic_sample(self):
         # A sample that ignores its seed is refused by `characterize`, but `fit` is the
         # primitive underneath and takes whatever it is handed -- which makes it the one
@@ -114,6 +169,54 @@ class TheArithmeticAgrees(unittest.TestCase):
         self.assert_close(mine_c, js[0])
         self.assertEqual(mine_se, 0.0)
         self.assert_close(js[1], 0.0)
+
+
+@unittest.skipUnless(NODE, "node is not on PATH, so the cross-half contract cannot be checked")
+class TheRENDEREDReportAgrees(unittest.TestCase):
+    """The comparison the reporter of issue #1 was making when they found the defect.
+
+    Comparing the numbers a report was rendered FROM is the weaker check: `why` strings
+    are what a consumer quotes, and they went through two different formatters. The
+    adapter below is deterministic in both languages -- no RNG, so nothing here is
+    agreeing about its generator -- which makes the whole rendered report comparable.
+    """
+
+    # Both observables are proportional to the truth with a seeded wobble, so each one
+    # has a constant AND an error bar, and the arithmetic between the halves is the same
+    # sequence of IEEE-754 operations on the same doubles.
+    JS_ADAPTER = ("{truths: () => [1000, 2000, 4000], observables: "
+                  "{a: (t, s) => t * (0.5 + (s % 7) / 100), "
+                  "b: (t, s) => t * (0.25 + (s % 5) / 40)}}")
+
+    class Adapter:
+        def truths(self):
+            return [1000, 2000, 4000]
+
+        @property
+        def observables(self):
+            return {"a": lambda t, s: t * (0.5 + (s % 7) / 100),
+                    "b": lambda t, s: t * (0.25 + (s % 5) / 40)}
+
+    def test_both_halves_say_the_same_thing_about_an_unsupportable_constant(self):
+        # A tolerance far below what 64 trials can resolve, so every constant comes back
+        # unsupported and has to explain itself -- in numbers spanning several magnitudes.
+        mine = U.to_tolerance(self.Adapter(), 1e-9, floor=64, cap=64)
+        js = from_node(f"m.toTolerance({self.JS_ADAPTER}, 1e-9, "
+                       f"{{floor: 64, cap: 64}})")
+        for name in ("a", "b"):
+            self.assertIn("could not have detected",
+                          mine["per_observable"][name]["why_unsupported"])
+            self.assertEqual(mine["per_observable"][name]["why_unsupported"],
+                             js["per_observable"][name]["why_unsupported"],
+                             f"the halves explain {name} differently")
+        self.assertEqual(mine["notes"], js["notes"])
+
+    def test_both_halves_refuse_in_the_same_words(self):
+        mine = U.characterize(self.Adapter(), trials=64)
+        js = from_node(f"m.characterize({self.JS_ADAPTER}, {{trials: 64}})")
+        self.assertEqual(mine["per_observable"]["a"]["plateau"]["why"],
+                         js["per_observable"]["a"]["plateau"]["why"])
+        self.assertEqual(mine["notes"], js["notes"])
 
 
 @unittest.skipUnless(NODE, "node is not on PATH, so the cross-half contract cannot be checked")

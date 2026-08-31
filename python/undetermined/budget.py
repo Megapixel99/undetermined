@@ -28,6 +28,7 @@ of the question and not a nuisance parameter. It is the one number this module w
 for you, and exp 310's TARGETS said so before that round ran.
 """
 from . import core as CH
+from . import fmt
 
 SIGMAS = 3.0            # exp 309's RESOLVABLE_SIGMAS; an MDE is this many standard errors
 FLOOR_TRIALS = 400      # exp 310's floor
@@ -66,9 +67,10 @@ def _annotate(report, tolerance):
         if not row["supported"]:
             row["why_unsupported"] = (
                 "no constant was determined" if m is None else
-                "the constant is %.6g but this measurement could not have detected a "
-                "%.3g relative effect (MDE %.3g), so it does not support a claim at that "
-                "tolerance" % (row["constant"], tolerance, m))
+                "the constant is %s but this measurement could not have detected a "
+                "%s relative effect (MDE %s), so it does not support a claim at that "
+                "tolerance" % (fmt.sig(row["constant"]), fmt.sig(tolerance, 3),
+                               fmt.sig(m, 3)))
             if m is not None and (worst is None or m > worst):
                 worst = m
     return worst
