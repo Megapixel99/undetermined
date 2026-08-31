@@ -1,5 +1,10 @@
 # undetermined
 
+[![PyPI](https://img.shields.io/pypi/v/undetermined?label=PyPI&color=3775A9)](https://pypi.org/project/undetermined/)
+[![npm](https://img.shields.io/npm/v/undetermined?label=npm&color=CB3837)](https://www.npmjs.com/package/undetermined)
+[![ci](https://github.com/Megapixel99/undetermined/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Megapixel99/undetermined/actions/workflows/ci.yml)
+[![license MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **Point it at a program; get back what can and cannot be determined about it.**
 
 Plenty of libraries fit a curve to measurements and hand you back a number. This one
