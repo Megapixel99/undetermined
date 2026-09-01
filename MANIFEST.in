@@ -24,6 +24,12 @@ prune js
 exclude package.json
 exclude package-lock.json
 exclude .npmignore
+# The gates in `package.json` are npm-installed (`didrun`, `zerocase`), so a build run
+# after `npm ci` has a `node_modules/` beside the package, and `npm run test:js` leaves a
+# `reports/`. The sdist default is "the package, plus whatever setuptools recognises",
+# which is exactly the looseness this file exists to close.
+prune node_modules
+prune reports
 
 # --- tests and development, none of which an installed package needs --------- #
 prune python/tests

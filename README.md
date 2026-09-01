@@ -248,9 +248,27 @@ python3 -m unittest discover -s python/tests -v   # PYTHONPATH=python
 node --test js/test/*.test.js
 ```
 
+That is the plain form, and its exit code cannot tell you whether anything ran. The gated
+form is what CI runs, and it is the same command with a floor under it:
+
+```bash
+npm ci                             # two devDependencies, both of them gates
+npm run test:js                    # 28 tests, read out of the TAP the runner wrote
+PYTHONPATH=python npm run test:py  # 60 tests, and none of them skipped
+```
+
+The two gates are siblings of this package and are the reason the numbers above are
+assertions rather than trivia. [`didrun`](https://www.npmjs.com/package/@megapixel99/didrun)
+asks whether a command did anything at all; [`zerocase`](https://www.npmjs.com/package/zerocase)
+reads the denominator out of the report the runner already wrote. Neither is a runtime
+dependency — `dependencies` is empty, and the `artifacts` job asserts that against the
+built wheel and the packed tarball rather than against this sentence.
+
 The parity suite skips when `node` is not on PATH, so a Python-only contributor can still
 run everything else. CI asserts it was **not** skipped: a skipped test and a passing one
-look identical in a tally.
+look identical in a tally. Concretely, with `node` off PATH the suite skips all 21 tests,
+unittest still prints `Ran 21 tests` and still exits 0 — a total is not a denominator —
+and `npm run test:parity` reports **DID NOT RUN** with exit 3.
 
 ## License
 
