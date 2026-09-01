@@ -26,11 +26,16 @@ js/test/
 .github/
 .gitignore
 .npmignore
+# Committed, so that `npm ci` pins WHICH `didrun` and `zerocase` gate this repository.
+# It describes this repository's devDependencies and would describe nothing a consumer
+# installs, because `dependencies` is empty and stays that way.
+package-lock.json
 
 # --- restated from .gitignore, because this file replaces that fallback ------ #
 __pycache__/
 *.py[cod]
 node_modules/
+reports/
 dist/
 build/
 *.egg-info/

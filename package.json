@@ -16,8 +16,17 @@
     "./fmt": "./js/src/fmt.js"
   },
   "files": ["js/src", "README.md", "LICENSE"],
-  "scripts": { "test": "node --test js/test/*.test.js" },
+  "scripts": {
+    "test": "node --test js/test/*.test.js",
+    "test:js": "mkdir -p reports && zerocase --tap reports/js.tap --min-tap 28 -- node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=reports/js.tap js/test/*.test.js",
+    "test:py": "didrun --expect-count \"Ran (\\d+) tests\" --min 60 --expect \"Ran \\d+ tests in [0-9.]+s\\n\\nOK\\n\" -- python3 -m unittest discover -s python/tests -v",
+    "test:parity": "didrun --expect-count \"Ran (\\d+) tests\" --min 17 --expect \"Ran \\d+ tests in [0-9.]+s\\n\\nOK\\n\" -- python3 -m unittest discover -s python/tests -p test_parity.py -v"
+  },
   "dependencies": {},
+  "devDependencies": {
+    "@megapixel99/didrun": "^0.1.2",
+    "zerocase": "^0.1.3"
+  },
   "repository": { "type": "git", "url": "git+https://github.com/Megapixel99/undetermined.git" },
   "bugs": { "url": "https://github.com/Megapixel99/undetermined/issues" },
   "homepage": "https://github.com/Megapixel99/undetermined#readme"
