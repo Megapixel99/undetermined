@@ -8,7 +8,7 @@
 
 export {
   UNDETERMINED, MIN_RATIO, MIN_MARGIN, PLATEAU_K, PLATEAU_RUN,
-  characterize, fit, plateau, heterogeneity, ladderFor, granuleFor, reproducible,
+  characterize, fit, plateau, heterogeneity, ladderFor, granuleFor, granuleByProbe, reproducible,
   // The determinism seam. Exported because a caller supplies the verdict this routes on,
   // so `route` and the four names ARE the interface, not internals behind `characterize`.
   DETERMINISTIC_NO_RESOLUTION, TYPE_A, TYPE_B, ASK, UNPROBED, route, askText,

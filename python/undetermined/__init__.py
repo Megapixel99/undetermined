@@ -22,7 +22,7 @@ from .core import (
     ask_text,
     characterize,
     fit,
-    granule_for,
+    granule_by_probe, granule_for,
     heterogeneity,
     ladder_for,
     plateau,
@@ -31,7 +31,8 @@ from .core import (
 )
 
 __all__ = ["characterize", "to_tolerance", "reproducible", "fit", "plateau",
-           "heterogeneity", "ladder_for", "granule_for", "mde", "trials_for",
+           "heterogeneity", "ladder_for", "granule_for", "granule_by_probe",
+           "mde", "trials_for",
            "UNDETERMINED", "fmt",
            # The determinism seam. A caller supplies the verdict this routes on, so these
            # are the interface rather than internals behind `characterize`.

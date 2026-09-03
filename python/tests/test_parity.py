@@ -75,6 +75,26 @@ class TheThresholdsAreOneContract(unittest.TestCase):
                                    "m.DETERMINISTIC_NO_RESOLUTION]"),
                          [TYPE_A, TYPE_B, ASK, UNPROBED, "DETERMINISTIC_NO_RESOLUTION"])
 
+    def test_the_consecutive_granule_probe_agrees_across_the_halves(self):
+        """A new numeric function is exactly where the halves drift, and this one REFUSES
+        in three regimes -- a half that returned a number in any of them would answer a
+        different question under the same name."""
+        cases = [
+            (list(range(64, 96)), [56 + 8 * n for n in range(64, 96)]),   # consecutive
+            ([1000, 2000, 4000, 8000], [56 + 8 * n for n in (1000, 2000, 4000, 8000)]),
+            ([7, 14, 21, 28], [56 + 8 * n for n in (7, 14, 21, 28)]),
+            ([1, 2, 3], [0.5, 1.5, 2.5]),
+            ([1, 2, 3], [8, 8, 8]),
+            ([1, 2], [8]),
+        ]
+        from undetermined.core import granule_by_probe
+        mine = [granule_by_probe(i, v) for i, v in cases]
+        js = from_node("[%s]" % ", ".join(
+            "m.granuleByProbe(%s, %s)" % (json.dumps(i), json.dumps(v)) for i, v in cases))
+        self.assertEqual(mine, [None if x is None else float(x) for x in js])
+        # and the refusals are refusals, not zeros
+        self.assertEqual(mine, [8.0, None, None, None, None, None])
+
     def test_the_seam_reaches_the_REPORT_the_same_way_in_both_halves(self):
         """Routing agreeing is not the report agreeing. This drives `characterize` end to end
         on one adapter in both languages and compares the verdict each observable earns --
