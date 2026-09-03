@@ -57,6 +57,50 @@ class TheThresholdsAreOneContract(unittest.TestCase):
         self.assertEqual(js, [MIN_RATIO, MIN_MARGIN, PLATEAU_K, PLATEAU_RUN,
                               SIGMAS, FLOOR_TRIALS, CAP_TRIALS, GROWTH])
 
+    def test_the_determinism_SEAM_routes_identically_in_both_halves(self):
+        """The seam decides whether a silence is a refusal or a request, and the two halves
+        have to make that call the same way. Driven over the whole routing table rather than
+        asserted on the strings: a half that agreed on the vocabulary and disagreed on which
+        verdict a state earns would pass a name check and still send one caller a constant
+        where the other got an ask."""
+        from undetermined.core import ASK, TYPE_A, TYPE_B, UNPROBED, route
+        table = [("nondeterministic", False), ("nondeterministic", True),
+                 ("deterministic", False), ("deterministic", True),
+                 ("look", False), ("look", True), ("", False), ("unprobed", True)]
+        js = from_node("[%s]" % ", ".join(
+            "m.route(%s, %s)" % (json.dumps(st), "true" if g else "false") for st, g in table))
+        self.assertEqual(js, [route(st, g) for st, g in table])
+        # and the four names themselves, so neither half can rename one quietly
+        self.assertEqual(from_node("[m.TYPE_A, m.TYPE_B, m.ASK, m.UNPROBED, "
+                                   "m.DETERMINISTIC_NO_RESOLUTION]"),
+                         [TYPE_A, TYPE_B, ASK, UNPROBED, "DETERMINISTIC_NO_RESOLUTION"])
+
+    def test_the_seam_reaches_the_REPORT_the_same_way_in_both_halves(self):
+        """Routing agreeing is not the report agreeing. This drives `characterize` end to end
+        on one adapter in both languages and compares the verdict each observable earns --
+        including the case that must NOT ask, which is the one a naive port gets wrong."""
+        from undetermined.core import characterize
+
+        class Det(object):
+            observables = {"exact": lambda t, s: t * 2.0, "junk": lambda t, s: 7.0}
+
+            def truths(self):
+                return [8, 16, 32, 64, 128]
+
+        det = {"exact": "deterministic", "junk": "deterministic"}
+        py = characterize(Det(), trials=4, determinism=det)
+        js = from_node(
+            "(() => { const a = { observables: { exact: (t) => t * 2.0, junk: () => 7.0 }, "
+            "truths: () => [8, 16, 32, 64, 128] }; "
+            "const r = m.characterize(a, { trials: 4, determinism: "
+            '{ exact: "deterministic", junk: "deterministic" } }); '
+            "return Object.fromEntries(Object.entries(r.seam)"
+            ".map(([k, v]) => [k, [v.route, v.verdict]])); })()")
+        self.assertEqual(js, {k: [v["route"], v["verdict"]] for k, v in py["seam"].items()})
+        # the one that matters: `exact` is deterministic AND has a constant, so no ask
+        self.assertIsNone(py["seam"]["exact"]["verdict"])
+        self.assertEqual(py["seam"]["junk"]["verdict"], "DETERMINISTIC_NO_RESOLUTION")
+
     def test_UNDETERMINED_is_falsy_in_both_and_is_not_a_number(self):
         # `None` and `null` are both the absence of an answer. A half that used 0 or NaN
         # would let an undetermined constant flow into arithmetic.

@@ -92,6 +92,50 @@ export function granuleFor(values) {
  * measurement does not buy resolution. At `granule = 0` this reduces to the Type A formula
  * the package shipped with.
  */
+// ---------------------------------------------------------------- the determinism seam
+//
+// An observable with no sampling scatter is not an observable with nothing to say, and until
+// this existed the report could not tell you which one it had. Both arrived as the same
+// silence. The refusal is the product here, so a refusal that cannot say WHY is the failure
+// that matters. Mirrors `python/undetermined/core.py`; `test_parity.py` pins the vocabulary.
+//
+// The determinism verdict is an INPUT, not a dependency. Deciding it means running the thing
+// in fresh processes and comparing, which is `nondet`'s job; taking that on would move this
+// package off layer 0 and drag `countfn` with it. Four lines, and any oracle can drive them.
+
+export const DETERMINISTIC_NO_RESOLUTION = "DETERMINISTIC_NO_RESOLUTION";
+
+export const TYPE_A = "type-a";      // real scatter: the Type A path this package shipped with
+export const TYPE_B = "type-b";      // deterministic, resolution KNOWN: combined uncertainty
+export const ASK = "ask";            // deterministic, resolution INFERRED: say so and ask
+export const UNPROBED = "unprobed";  // determinism could not be established either way
+
+/**
+ * Which error model an observable earns. `state` is a determinism verdict from outside.
+ *
+ * `granuleDeclared` is deliberately a BOOLEAN and not the granule. A granule is almost always
+ * available -- `granuleFor` infers one from the reported digits -- so routing on its
+ * truthiness would send every deterministic observable down Type B and make the ask
+ * unreachable. What decides is whether anyone SAID what one unit is worth.
+ */
+export function route(state, granuleDeclared) {
+  if (state !== "deterministic" && state !== "nondeterministic") return UNPROBED;
+  if (state === "nondeterministic") return TYPE_A;
+  return granuleDeclared ? TYPE_B : ASK;
+}
+
+/** The request, naming the observable and the resolution that was assumed instead. */
+export function askText(name, granule) {
+  return `\`${name}\` answered identically on every repeat, so its Type A error is zero by ` +
+    `construction and repeating it buys nothing. A resolution of ${fmt.sig(granule)} was ` +
+    `INFERRED from the digits it reports, not declared. Supply what one unit of ` +
+    `\`${name}\` is worth and the ladder is built from the combined uncertainty instead. ` +
+    `That is a fact about the instrument, it can be checked before any fit runs, and it can ` +
+    `be wrong: too fine and this observable stays silent, too coarse and the tool ` +
+    `manufactures a constant that is not there.`;
+}
+
+
 function fromRaws(raws, truth, granule) {
   const mean = raws.reduce((a, b) => a + b, 0) / raws.length;
   if (mean === 0) return [null, null];
@@ -172,13 +216,20 @@ export function plateau(ladder, k = PLATEAU_K, need = PLATEAU_RUN) {
  * it is a property of the instrument, not of a reading, and the whole set can only give a
  * finer answer than its coarsest member.
  */
-export function ladderFor(sample, truths, trials, seed0 = 0) {
+export function ladderFor(sample, truths, trials, seed0 = 0, into = null) {
   const drawn = truths.map((t) => {
     const raws = [];
     for (let i = 0; i < trials; i++) raws.push(sample(t, seed0 + i));
     return [t, raws];
   });
   const granule = granuleFor(drawn.flatMap(([, raws]) => raws));
+  // An out-parameter rather than a widened return type: the return shape is pinned against
+  // the Python half and a silent widening is the drift `test_parity.py` exists to stop.
+  if (into) {
+    into.granule = granule;
+    into.scatter_free = drawn.every(([, raws]) =>
+      raws.length < 2 || Math.min(...raws) === Math.max(...raws));
+  }
   const out = [];
   for (const [t, raws] of drawn) {
     const [c, se] = fromRaws(raws, t, granule);
@@ -226,7 +277,7 @@ export function reproducible(obs, truths, seed0 = 17) {
 }
 
 /** The whole report. Nothing here knows what program it is looking at. */
-export function characterize(adapter, { trials = 2500, seed0 = 17 } = {}) {
+export function characterize(adapter, { trials = 2500, seed0 = 17, determinism = null, granules = null } = {}) {
   const truths = [...adapter.truths()];
   const obs = adapter.observables;
   if (Object.keys(obs).length < 2) {
@@ -239,10 +290,12 @@ export function characterize(adapter, { trials = 2500, seed0 = 17 } = {}) {
 
   const per = {};
   for (const [name, f] of Object.entries(obs)) {
-    const lad = ladderFor(f, truths, trials, seed0);
+    const seen = {};
+    const lad = ladderFor(f, truths, trials, seed0, seen);
     const p = plateau(lad);
     per[name] = {
       ladder: lad, plateau: p,
+      granule: seen.granule ?? null, scatter_free: seen.scatter_free ?? null,
       constant: p.value, constant_se: p.se, regime_from: p.from_truth,
       top_rung: lad.length ? lad[lad.length - 1].c : null,
       top_rung_se: lad.length ? lad[lad.length - 1].se : null,
@@ -290,13 +343,15 @@ export function characterize(adapter, { trials = 2500, seed0 = 17 } = {}) {
   }
 
   const undetermined = Object.keys(obs).filter((n) => per[n].constant === UNDETERMINED);
+  const seam = seamFor(obs, per, determinism || {}, granules || {});
   return {
     observables: Object.keys(obs).sort(),
     per_observable: per,
     informative,
     perturbation_response: response,
     undetermined,
-    notes: notes(per, informative, undetermined),
+    seam,
+    notes: notes(per, informative, undetermined, seam),
   };
 }
 
@@ -327,9 +382,35 @@ function pick(ratios) {
            why: `${rank[0][0]} varies ${fmt.fixed(rank[0][1], 1)}x its own error` };
 }
 
-function notes(per, informative, undetermined) {
+/**
+ * {observable: {route, state, verdict, why}} -- why each silence is the silence it is.
+ *
+ * Only an observable that came back UNDETERMINED can carry the ask. One that produced a
+ * constant is not missing a resolution, and overwriting its explanation would trade a true
+ * sentence for one the tool cannot support.
+ */
+function seamFor(obs, per, determinism, granules) {
+  const out = {};
+  for (const name of Object.keys(obs)) {
+    const state = Object.prototype.hasOwnProperty.call(determinism, name)
+      ? determinism[name] : "unprobed";
+    const declared = Object.prototype.hasOwnProperty.call(granules, name);
+    const where = route(state, declared);
+    const entry = { route: where, state, granule_declared: declared, verdict: null, why: null };
+    if (where === ASK && per[name].constant === UNDETERMINED) {
+      entry.verdict = DETERMINISTIC_NO_RESOLUTION;
+      entry.why = askText(name, per[name].granule);
+    }
+    out[name] = entry;
+  }
+  return out;
+}
+
+function notes(per, informative, undetermined, seam = null) {
   const out = [];
   for (const n of [...undetermined].sort()) {
+    const asked = seam && seam[n] ? seam[n].verdict : null;
+    if (asked) { out.push(`\`${n}\`: ${asked} -- ${seam[n].why}`); continue; }
     out.push(`\`${n}\`: no plateau -- ${per[n].plateau.why}`);
   }
   if (informative.choice === UNDETERMINED) {
