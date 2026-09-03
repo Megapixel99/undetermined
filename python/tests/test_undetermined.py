@@ -16,6 +16,7 @@ from undetermined import (  # noqa: E402
     UNDETERMINED, characterize, fit, granule_for, heterogeneity, ladder_for, mde,
     plateau, to_tolerance, trials_for,
 )
+from undetermined import core  # noqa: E402  (the seam is driven through the module)
 
 
 class ItRecoversAConstantItKnowsTheAnswerTo(unittest.TestCase):
@@ -137,10 +138,6 @@ class ThePrimitives(unittest.TestCase):
         self.assertIsNone(se)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class ADeterministicObservableIsNotUndetermined(unittest.TestCase):
     """0.2.0. Before it, every one of these came back UNDETERMINED -- about a quantity the
     tool had measured exactly, in the same words it uses for a quantity that has no constant
@@ -260,3 +257,14 @@ class TheDeterminismSeam(unittest.TestCase):
         r = core.characterize(self.Det(), trials=4, determinism=self.DET)
         self.assertEqual(r["per_observable"]["junk"]["granule"], 1.0)
         self.assertIs(r["per_observable"]["junk"]["scatter_free"], True)
+
+
+# AT THE BOTTOM, AND THAT IS LOAD-BEARING. This block used to sit mid-file with three classes
+# defined below it, so `python3 test_undetermined.py` ran the 17 tests declared ABOVE it and
+# printed OK -- while 18 others, including every one in this file's last three classes, were
+# never collected. CI runs `python3 -m unittest discover`, which imports the module first and
+# therefore sees all of them, so the two invocations disagreed about what "the suite" meant
+# and only the quieter one was wrong. A suite that reports OK over half of itself is exactly
+# what this package exists to complain about.
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
