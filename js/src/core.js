@@ -75,6 +75,41 @@ function ulp(value) {
  * how a search flattens a drift that was never constant. The alternatives (the GCD of the
  * values, the spacing between them) can only err coarse, so neither is used.
  */
+/**
+ * The granule MEASURED at consecutive inputs, or null when it cannot be.
+ *
+ * `granuleFor` infers a granule from the reported digits and errs FINE on purpose, and
+ * its docstring rejects the greatest common divisor because "the alternatives can only
+ * err coarse". That is correct for the regime this package samples in, and not for every
+ * regime. Reckoner's exp 391 measured the difference over 15 observables whose quantum is
+ * derivable from a published constant:
+ *
+ *   - at CONSECUTIVE inputs the GCD of the differences recovers the true quantum on 13 of
+ *     13 integer observables, exactly;
+ *   - at a LADDER's rungs it errs coarse by the rung spacing (`list` at 1,000...300,000
+ *     gives 8,000 against a true 8);
+ *   - on a plain linear sweep BOTH the values' GCD and the differences' GCD err coarse
+ *     together, because a constant step k makes every difference k times the quantum:
+ *     [7, 14, 21, 28] gives 56 either way, seven times too coarse.
+ *
+ * So the safe quantity is an estimator AND a regime: the GCD of the differences at
+ * consecutive inputs. This refuses anything else, and changes nothing about `granuleFor`.
+ */
+export function granuleByProbe(inputs, values) {
+  if (inputs.length !== values.length || values.length < 2) return null;
+  if (inputs.some((i) => !Number.isInteger(i))) return null;
+  for (let k = 1; k < inputs.length; k += 1) {
+    if (inputs[k] - inputs[k - 1] !== 1) return null;   // not consecutive
+  }
+  if (values.some((v) => !Number.isInteger(v))) return null;
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  let g = 0;
+  for (let k = 1; k < values.length; k += 1) {
+    g = gcd(g, Math.abs(values[k] - values[k - 1]));
+  }
+  return g ? g : null;
+}
+
 export function granuleFor(values) {
   const vals = Array.from(values, Number);
   if (vals.length === 0) return 0;

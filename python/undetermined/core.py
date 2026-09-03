@@ -224,6 +224,54 @@ def plateau(ladder, k=PLATEAU_K, need=PLATEAU_RUN):
                    "the ladder" % need}
 
 
+def granule_by_probe(inputs, values):
+    """The granule MEASURED at consecutive inputs, or None when it cannot be.
+
+    `granule_for` infers a granule from the reported digits and errs FINE on purpose,
+    which is safe: too fine widens nothing, so a rung is dropped rather than a drift
+    flattened into a plateau. Its docstring rejects the greatest common divisor because
+    "the alternatives can only err coarse". That rejection is correct **for the regime
+    this package samples in** and not for every regime, and the difference is measurable.
+
+    Reckoner's exp 391 priced it over 15 observables whose quantum is derivable from a
+    published constant (`struct.calcsize("P")`, `sys.int_info.sizeof_digit`, PEP 393 kind
+    widths, `array.itemsize`, `get_clock_info().resolution`):
+
+      * at CONSECUTIVE inputs the GCD of the differences recovers the true quantum on
+        13 of 13 integer observables -- exactly, not approximately;
+      * at a LADDER's rungs it errs coarse by the rung spacing: `list` sampled at
+        1,000...300,000 gives 8,000 against a true 8;
+      * on a plain linear sweep BOTH the values' GCD and the differences' GCD err coarse
+        together, because a constant step `k` makes every difference `k` times the
+        quantum. `[7, 14, 21, 28]` on `list` gives 56 either way, seven times too coarse.
+
+    So the safe quantity is not an estimator but a estimator-and-regime pair: **the GCD of
+    the differences at consecutive inputs**. Consecutive sampling makes the differences
+    constant, which is what makes the GCD the quantum by construction rather than by luck.
+
+    This function therefore REFUSES anything else. It is a separate probe, run for the
+    granule alone and never over a fit's own rungs, and nothing here changes what
+    `granule_for` returns or when `ladder_for` calls it.
+
+    Returns None -- never a guess -- when the inputs are not consecutive, when fewer than
+    two readings are given, when any reading is not an integer, or when every difference
+    is zero (an observable that did not move has no quantum to find).
+    """
+    if len(inputs) != len(values) or len(values) < 2:
+        return None
+    if any(int(i) != i for i in inputs):
+        return None
+    steps = {int(b) - int(a) for a, b in zip(inputs, inputs[1:])}
+    if steps != {1}:
+        return None                      # not consecutive: the regime the GCD needs
+    if any(float(v) != int(v) for v in values):
+        return None                      # no integer quantum to find
+    g = 0
+    for a, b in zip(values, values[1:]):
+        g = math.gcd(g, abs(int(b) - int(a)))
+    return float(g) if g else None
+
+
 # ---------------------------------------------------------------- the report
 
 def ladder_for(sample, truths, trials, seed0=0, into=None):

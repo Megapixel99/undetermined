@@ -13,7 +13,7 @@ from _adapters import (  # noqa: E402
     CoinAdapter, DeterministicAdapter, SingleObservableAdapter, UnseededAdapter,
 )
 from undetermined import (  # noqa: E402
-    UNDETERMINED, characterize, fit, granule_for, heterogeneity, ladder_for, mde,
+    UNDETERMINED, characterize, fit, granule_by_probe, granule_for, heterogeneity, ladder_for, mde,
     plateau, to_tolerance, trials_for,
 )
 from undetermined import core  # noqa: E402  (the seam is driven through the module)
@@ -268,3 +268,47 @@ class TheDeterminismSeam(unittest.TestCase):
 # what this package exists to complain about.
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class GranuleByProbe(unittest.TestCase):
+    """The probe is an estimator AND a regime; it refuses every regime but one.
+
+    Reckoner exp 391 measured all three columns. These pin the boundary rather than the
+    happy path, because the happy path is the one anybody would write.
+    """
+
+    @staticmethod
+    def _list_sizeof(n):
+        return 56 + 8 * n              # `list`'s published law: 8*(7+n)
+
+    def test_it_recovers_the_quantum_at_consecutive_inputs(self):
+        ns = list(range(64, 96))
+        self.assertEqual(granule_by_probe(ns, [self._list_sizeof(n) for n in ns]), 8.0)
+
+    def test_it_REFUSES_a_ladder_because_the_gcd_would_err_coarse(self):
+        """1,000...300,000 on `list` gives 8,000 against a true 8 -- the rung spacing,
+        not the quantum. Refusing is the whole point of the function."""
+        ns = [1000, 2000, 4000, 8000]
+        self.assertIsNone(granule_by_probe(ns, [self._list_sizeof(n) for n in ns]))
+
+    def test_it_REFUSES_a_linear_sweep(self):
+        """Where BOTH statistics err coarse together: a constant step k makes every
+        difference k times the quantum, so [7,14,21,28] reads 56, seven times too coarse."""
+        ns = [7, 14, 21, 28]
+        self.assertIsNone(granule_by_probe(ns, [self._list_sizeof(n) for n in ns]))
+
+    def test_it_refuses_non_integer_readings(self):
+        self.assertIsNone(granule_by_probe([1, 2, 3], [0.5, 1.5, 2.5]))
+
+    def test_it_refuses_an_observable_that_did_not_move(self):
+        self.assertIsNone(granule_by_probe([1, 2, 3], [8, 8, 8]))
+
+    def test_it_refuses_mismatched_or_short_input(self):
+        self.assertIsNone(granule_by_probe([1, 2], [8]))
+        self.assertIsNone(granule_by_probe([1], [8]))
+
+    def test_it_changes_nothing_about_granule_for(self):
+        """The probe is additive. `granule_for` still errs fine, which is what makes it
+        safe as the default -- and this pins that the change did not touch it."""
+        self.assertEqual(granule_for([8, 16, 24]), 1.0)
+        self.assertEqual(granule_for([0.25, 0.5]), 0.01)
