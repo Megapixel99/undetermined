@@ -198,3 +198,65 @@ class TheGranuleRule(unittest.TestCase):
 
     def test_an_empty_set_is_zero(self):
         self.assertEqual(granule_for([]), 0.0)
+
+
+class TheDeterminismSeam(unittest.TestCase):
+    """An observable with no scatter is not an observable with nothing to say.
+
+    Before this, both arrived as the same silence and the report could not tell you which
+    one it had. The refusal is what this package sells, so a refusal that cannot say why is
+    the failure that matters -- not a wrong number, an unusable one.
+    """
+
+    class Det(object):
+        observables = {"exact": lambda t, s: t * 2.0,
+                       "junk": lambda t, s: 7.0}
+
+        def truths(self):
+            return [8, 16, 32, 64, 128]
+
+    DET = {"exact": "deterministic", "junk": "deterministic"}
+
+    def test_routing_is_decided_by_whether_anyone_SAID_what_a_unit_is_worth(self):
+        # Not by whether a granule exists: `granule_for` infers one almost always, so
+        # routing on its truthiness would make the ask unreachable.
+        self.assertEqual(core.route("nondeterministic", False), core.TYPE_A)
+        self.assertEqual(core.route("deterministic", True), core.TYPE_B)
+        self.assertEqual(core.route("deterministic", False), core.ASK)
+        self.assertEqual(core.route("look", False), core.UNPROBED)
+        self.assertEqual(core.route("anything unrecognised", True), core.UNPROBED)
+
+    def test_an_UNDETERMINED_deterministic_observable_asks_for_its_resolution(self):
+        r = core.characterize(self.Det(), trials=4, determinism=self.DET)
+        self.assertEqual(r["seam"]["junk"]["verdict"], core.DETERMINISTIC_NO_RESOLUTION)
+        self.assertIn("junk", r["undetermined"])
+        self.assertIn("INFERRED", r["seam"]["junk"]["why"])
+
+    def test_an_observable_that_PRODUCED_a_constant_is_never_overwritten(self):
+        # The load-bearing half. A deterministic observable with an answer is not missing a
+        # resolution, and trading its explanation for the ask would swap a true sentence for
+        # one the tool cannot support.
+        r = core.characterize(self.Det(), trials=4, determinism=self.DET)
+        self.assertEqual(r["seam"]["exact"]["route"], core.ASK)
+        self.assertIsNone(r["seam"]["exact"]["verdict"])
+        self.assertNotIn("exact", r["undetermined"])
+
+    def test_a_DECLARED_resolution_routes_to_type_b_and_asks_for_nothing(self):
+        r = core.characterize(self.Det(), trials=4, determinism=self.DET,
+                              granules={"junk": 0.5})
+        self.assertEqual(r["seam"]["junk"]["route"], core.TYPE_B)
+        self.assertIsNone(r["seam"]["junk"]["verdict"])
+
+    def test_without_a_verdict_from_outside_nothing_changes(self):
+        # The seam is a pure addition: an existing caller passing neither argument gets the
+        # report it got before, with every observable UNPROBED and no ask anywhere.
+        r = core.characterize(self.Det(), trials=4)
+        self.assertTrue(all(e["route"] == core.UNPROBED for e in r["seam"].values()))
+        self.assertTrue(all(e["verdict"] is None for e in r["seam"].values()))
+        self.assertIn("no plateau", " ".join(r["notes"]))
+
+    def test_the_inferred_granule_is_RECORDED_so_the_ask_can_quote_it(self):
+        # An ask that cannot say what it assumed instead is a complaint, not a request.
+        r = core.characterize(self.Det(), trials=4, determinism=self.DET)
+        self.assertEqual(r["per_observable"]["junk"]["granule"], 1.0)
+        self.assertIs(r["per_observable"]["junk"]["scatter_free"], True)
