@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   UNDETERMINED, characterize, fit, granuleFor, heterogeneity, ladderFor, mde, plateau,
   toTolerance, trialsFor,
+  DETERMINISTIC_NO_RESOLUTION, TYPE_A, TYPE_B, ASK, UNPROBED, route,
 } from "../src/index.js";
 
 /** A tiny seeded RNG, so the fixtures are reproducible by construction. */
@@ -176,4 +177,43 @@ test("the finest reading sets the granule for the whole set", () => {
 
 test("the representation is a floor", () => {
   assert.equal(granuleFor([8 / 7, 16 / 7, 32 / 7]), 8.881784197001252e-16);
+});
+
+test("the determinism seam routes on whether a resolution was DECLARED", () => {
+  // Not on whether a granule exists: `granuleFor` infers one almost always, so routing on
+  // its truthiness would send every deterministic observable to Type B and make the ask
+  // unreachable. Mirrors the Python half; `test_parity.py` drives both over this table.
+  assert.equal(route("nondeterministic", false), TYPE_A);
+  assert.equal(route("deterministic", true), TYPE_B);
+  assert.equal(route("deterministic", false), ASK);
+  assert.equal(route("look", false), UNPROBED);
+  assert.equal(route("anything unrecognised", true), UNPROBED);
+});
+
+test("a deterministic observable with no answer asks for its resolution", () => {
+  const adapter = {
+    observables: { exact: (t) => t * 2.0, junk: () => 7.0 },
+    truths: () => [8, 16, 32, 64, 128],
+  };
+  const det = { exact: "deterministic", junk: "deterministic" };
+  const r = characterize(adapter, { trials: 4, determinism: det });
+  assert.equal(r.seam.junk.verdict, DETERMINISTIC_NO_RESOLUTION);
+  assert.ok(r.seam.junk.why.includes("INFERRED"));
+  assert.ok(r.undetermined.includes("junk"));
+
+  // THE LOAD-BEARING HALF: `exact` is deterministic too, but it PRODUCED a constant. It is
+  // not missing a resolution, and overwriting its explanation would trade a true sentence
+  // for one this tool cannot support.
+  assert.equal(r.seam.exact.route, ASK);
+  assert.equal(r.seam.exact.verdict, null);
+  assert.ok(!r.undetermined.includes("exact"));
+
+  // A declared resolution routes to Type B and asks for nothing.
+  const r2 = characterize(adapter, { trials: 4, determinism: det, granules: { junk: 0.5 } });
+  assert.equal(r2.seam.junk.route, TYPE_B);
+  assert.equal(r2.seam.junk.verdict, null);
+
+  // And with no verdict supplied, nothing changes: a pure addition for existing callers.
+  const r3 = characterize(adapter, { trials: 4 });
+  assert.ok(Object.values(r3.seam).every((e) => e.route === UNPROBED && e.verdict === null));
 });

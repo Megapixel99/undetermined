@@ -93,6 +93,59 @@ def granule_for(values):
     return max(10.0 ** -places, floor)
 
 
+# ---------------------------------------------------------------- the determinism seam
+#
+# THE DEFECT THIS NAMES. An observable with no sampling scatter is not an observable with
+# nothing to say, and until this existed the report could not tell you which one it had. Both
+# arrived as the same silence. That silence is the product here -- a refusal is the thing this
+# package sells -- so a refusal that cannot say WHY is the failure mode that matters.
+#
+# WHAT IS AND IS NOT DECIDED HERE. Whether an observable is deterministic is a question about
+# the SYSTEM, answered by running it in fresh processes and comparing; `nondet` does exactly
+# that and does it better than a re-derivation would. So the verdict is an INPUT. This package
+# stays a zero-dependency root and any determinism oracle can drive it, which is also why the
+# routing is four lines and not a module.
+#
+# THE ASK IS AIMED AT SOMETHING ANSWERABLE. "What is the resolution of this observable?" is a
+# property of the instrument, checkable before any fit runs, and able to be WRONG -- which is
+# what makes it a request rather than a wish. `granule_for` already GUESSES it from the last
+# reported digit and says so; the difference this draws is between a resolution that was
+# declared and one that was inferred, because only the second is worth asking about.
+
+DETERMINISTIC_NO_RESOLUTION = "DETERMINISTIC_NO_RESOLUTION"
+
+TYPE_A = "type-a"        # real scatter: the Type A path this package shipped with
+TYPE_B = "type-b"        # deterministic, resolution KNOWN: combined uncertainty
+ASK = "ask"              # deterministic, resolution INFERRED: say so and ask
+UNPROBED = "unprobed"    # determinism could not be established either way
+
+
+def route(state, granule_declared):
+    """Which error model an observable earns. `state` is a determinism verdict from outside.
+
+    `granule_declared` is deliberately a BOOLEAN and not the granule itself. A granule is
+    almost always available -- `granule_for` infers one from the reported digits -- so routing
+    on its truthiness would send every deterministic observable down the Type B path and the
+    ask would be unreachable. What decides is whether anyone SAID what one unit is worth.
+    """
+    if state not in ("deterministic", "nondeterministic"):
+        return UNPROBED
+    if state == "nondeterministic":
+        return TYPE_A
+    return TYPE_B if granule_declared else ASK
+
+
+def ask_text(name, granule):
+    """The request, naming the observable and the resolution that was assumed instead."""
+    return ("`%s` answered identically on every repeat, so its Type A error is zero by "
+            "construction and repeating it buys nothing. A resolution of %s was INFERRED from "
+            "the digits it reports, not declared. Supply what one unit of `%s` is worth and "
+            "the ladder is built from the combined uncertainty instead. That is a fact about "
+            "the instrument, it can be checked before any fit runs, and it can be wrong: too "
+            "fine and this observable stays silent, too coarse and the tool manufactures a "
+            "constant that is not there." % (name, fmt.sig(granule), name))
+
+
 def _from_raws(raws, truth, granule):
     """(c, u) for one rung, with the COMBINED standard uncertainty.
 
@@ -173,7 +226,7 @@ def plateau(ladder, k=PLATEAU_K, need=PLATEAU_RUN):
 
 # ---------------------------------------------------------------- the report
 
-def ladder_for(sample, truths, trials, seed0=0):
+def ladder_for(sample, truths, trials, seed0=0, into=None):
     """The ladder, with ONE granule derived across every rung's draws.
 
     Sampling happens once. The granule is derived from the whole set rather than per rung
@@ -182,6 +235,14 @@ def ladder_for(sample, truths, trials, seed0=0):
     """
     drawn = [(t, [sample(t, seed0 + i) for i in range(trials)]) for t in truths]
     granule = granule_for([r for _t, raws in drawn for r in raws])
+    # The granule is INFERRED here and the caller cannot otherwise see which number it got.
+    # `into` is an optional out-parameter rather than a changed return type, because the
+    # return shape is pinned against the JavaScript half and a silent widening there is the
+    # drift `test_parity.py` exists to stop.
+    if into is not None:
+        into["granule"] = granule
+        into["scatter_free"] = all(len(raws) < 2 or min(raws) == max(raws)
+                                   for _t, raws in drawn)
     out = []
     for t, raws in drawn:
         c, se = _from_raws(raws, t, granule)
@@ -227,8 +288,15 @@ def reproducible(obs, truths, seed0=17):
                                  fmt.sig(first, whole), fmt.sig(second, whole)))
 
 
-def characterize(adapter, trials=2500, seed0=17):
-    """The whole report. Nothing here knows what program it is looking at."""
+def characterize(adapter, trials=2500, seed0=17, determinism=None, granules=None):
+    """The whole report. Nothing here knows what program it is looking at.
+
+    `determinism` is `{observable: state}` from an outside oracle -- `nondet` or anything that
+    answers the same question. Absent, every observable routes as before and this is a pure
+    addition. `granules` is `{observable: resolution}` for the ones somebody has DECLARED; an
+    observable missing from it still gets `granule_for`'s inferred value, and the difference
+    between the two is what decides whether the report asks for a resolution or assumes one.
+    """
     truths = list(adapter.truths())
     obs = adapter.observables
     if len(obs) < 2:
@@ -237,9 +305,12 @@ def characterize(adapter, trials=2500, seed0=17):
     reproducible(obs, truths, seed0)
     per = {}
     for name, f in obs.items():
-        lad = ladder_for(f, truths, trials, seed0)
+        seen = {}
+        lad = ladder_for(f, truths, trials, seed0, into=seen)
         p = plateau(lad)
         per[name] = {"ladder": lad, "plateau": p,
+                     "granule": seen.get("granule"),
+                     "scatter_free": seen.get("scatter_free"),
                      "constant": p["value"], "constant_se": p["se"],
                      "regime_from": p["from_truth"],
                      "top_rung": lad[-1]["c"] if lad else None,
@@ -279,10 +350,11 @@ def characterize(adapter, trials=2500, seed0=17):
                 response[name][knob] = _slope(pts)
 
     undetermined = [n for n in obs if per[n]["constant"] is UNDETERMINED]
+    seam = _seam(obs, per, determinism or {}, granules or {})
     return {"observables": sorted(obs), "per_observable": per,
             "informative": informative, "perturbation_response": response,
-            "undetermined": undetermined,
-            "notes": _notes(per, informative, undetermined)}
+            "undetermined": undetermined, "seam": seam,
+            "notes": _notes(per, informative, undetermined, seam)}
 
 
 def _slope(pts):
@@ -312,9 +384,34 @@ def _pick(ratios):
                    % (rank[0][0], fmt.fixed(rank[0][1], 1))}
 
 
-def _notes(per, informative, undetermined):
+def _seam(obs, per, determinism, granules):
+    """{observable: {route, state, verdict, why}} -- why each silence is the silence it is.
+
+    Only an observable that came back UNDETERMINED can carry the ask. One that produced a
+    constant is not missing a resolution, and overwriting its explanation would trade a true
+    sentence for one the tool cannot support -- the same rule exp 390 froze.
+    """
+    out = {}
+    for name in obs:
+        state = determinism.get(name, "unprobed")
+        declared = name in granules
+        where = route(state, declared)
+        entry = {"route": where, "state": state, "granule_declared": declared,
+                 "verdict": None, "why": None}
+        if where == ASK and per[name]["constant"] is UNDETERMINED:
+            entry["verdict"] = DETERMINISTIC_NO_RESOLUTION
+            entry["why"] = ask_text(name, per[name].get("granule"))
+        out[name] = entry
+    return out
+
+
+def _notes(per, informative, undetermined, seam=None):
     out = []
     for n in sorted(undetermined):
+        asked = (seam or {}).get(n, {}).get("verdict")
+        if asked:
+            out.append("`%s`: %s -- %s" % (n, asked, (seam or {})[n]["why"]))
+            continue
         out.append("`%s`: no plateau -- %s" % (n, per[n]["plateau"]["why"]))
     if informative["choice"] is UNDETERMINED:
         out.append("which observable characterises the program: UNDETERMINED -- %s"
